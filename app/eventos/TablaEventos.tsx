@@ -1,4 +1,4 @@
-import { ChevronRight, Activity, Calendar, Hash, Wrench, User, briefcase } from 'lucide-react';
+import { ChevronRight, Activity, Calendar, Hash, Wrench, User } from 'lucide-react';
 
 interface RegistroEvento {
     id: string;
