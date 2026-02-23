@@ -1,9 +1,9 @@
 "use client"
-import { useEffect, useState, Suspense, useRef } from 'react'
+import { useEffect, useState, Suspense, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
-import { 
-  Calendar, ChevronLeft, LayoutDashboard, AlertTriangle, 
+import {
+  Calendar, ChevronLeft, LayoutDashboard, AlertTriangle,
   CheckCircle2, RefreshCcw, Clock, Settings, Plus, X, Trash2, Search, Gauge, Upload, Download
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
@@ -20,6 +20,7 @@ function RendimientoContent() {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Mantenemos rawDbData para compatibilidad y 'data' para mostrar
   const [data, setData] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -45,6 +46,58 @@ function RendimientoContent() {
 
   const [formData, setFormData] = useState(initialFormState)
 
+  // --- FETCH DATA (AHORA DESDE LA VISTA ACUMULADA) ---
+  const fetchRendimiento = async () => {
+    try {
+      setLoading(true);
+      const [year, month] = mesSeleccionado.split('-').map(Number);
+
+      // CAMBIO AQUÍ: Consultamos la vista que hace las sumas en SQL
+      let query = supabase.from('vista_rendimiento_acumulado').select('*')
+        .gte('fecha', `${mesSeleccionado}-01`)
+        .lt('fecha', month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, '0')}-01`)
+        .order('fecha', { ascending: true });
+
+      if (filtroPlaca) query = query.ilike('placa_rodaje', `%${filtroPlaca}%`);
+
+      const { data: res, error } = await query;
+      if (error) throw error;
+
+      setData(res || []);
+    } catch (err: any) {
+      console.error("Error cargando vista:", err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { fetchRendimiento() }, [mesSeleccionado, filtroPlaca])
+
+  // --- LÓGICA DE CÁLCULO PARA TARJETAS (INDICADORES TOTALES) ---
+  // Nota: Usamos directamente los campos calculados que vienen de la vista
+  const totalHorasTrabajo = data.reduce((acc, item) => acc + Number(item.horas_trabajo || 0), 0);
+  const totalFallas = data.reduce((acc, item) => acc + Number(item.n_fallas || 0), 0);
+  const totalCtvo = data.reduce((acc, item) => acc + Number(item.manto_ctvo || 0), 0);
+
+  const totalParadasManto = data.reduce((acc, item) =>
+    acc + Number(item.inspeccion) + Number(item.manto_prev) + Number(item.manto_prog) + Number(item.manto_ctvo), 0);
+
+  const horasTotalesPeriodo = data.length * 24;
+
+  const tpef = totalFallas > 0 ? (totalHorasTrabajo / totalFallas).toFixed(2) : "0.00";
+  const tppr = totalFallas > 0 ? (totalCtvo / totalFallas).toFixed(2) : "0.00";
+
+  // Estos valores ya vienen calculados de la vista, pero para las tarjetas globales los recalculamos sobre el total
+  const dmValue = horasTotalesPeriodo > 0
+    ? (((horasTotalesPeriodo - totalParadasManto) / horasTotalesPeriodo) * 100).toFixed(2)
+    : "0.00";
+
+  const denominadorUtil = horasTotalesPeriodo - totalParadasManto;
+  const utilValue = denominadorUtil > 0
+    ? ((totalHorasTrabajo / denominadorUtil) * 100).toFixed(2)
+    : "0.00";
+
+  // --- LÓGICA IMPORTAR EXCEL ---
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -56,7 +109,7 @@ function RendimientoContent() {
         const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rawJson: any[] = XLSX.utils.sheet_to_json(ws);
-        
+
         const jsonProcesado = rawJson.map(fila => {
           let f = fila.DATE || fila.fecha || fila.FECHA;
           if (typeof f === 'number') {
@@ -81,7 +134,7 @@ function RendimientoContent() {
             descripcion: String(fila.DESCRIPCION || fila.descripcion || '')
           };
         });
-        
+
         if (confirm(`¿Importar ${jsonProcesado.length} registros?`)) {
           const { error } = await supabase.from('reporte_diario').insert(jsonProcesado);
           if (error) throw error;
@@ -93,133 +146,42 @@ function RendimientoContent() {
     };
     reader.readAsBinaryString(file);
   };
-  // AQUÍ TERMINA EL PEGADO
 
-
-  // --- LÓGICA DE CÁLCULO PARA TARJETAS (INDICADORES TOTALES) ---
-  const totalHorasTrabajo = data.reduce((acc, item) => acc + (Number(item.horometro_final) - Number(item.horometro_inicial)), 0);
-  const totalFallas = data.reduce((acc, item) => acc + Number(item.n_fallas), 0);
-  const totalCtvo = data.reduce((acc, item) => acc + Number(item.manto_ctvo), 0);
-  
-  const totalParadasManto = data.reduce((acc, item) => 
-    acc + Number(item.inspeccion) + Number(item.manto_prev) + Number(item.manto_prog) + Number(item.manto_ctvo), 0);
-
-  const horasTotalesPeriodo = data.length * 24;
-
-  const tpef = totalFallas > 0 ? (totalHorasTrabajo / totalFallas).toFixed(2) : "0.00";
-  const tppr = totalFallas > 0 ? (totalCtvo / totalFallas).toFixed(2) : "0.00";
-  
-  const dmValue = horasTotalesPeriodo > 0 
-    ? (((horasTotalesPeriodo - totalParadasManto) / horasTotalesPeriodo) * 100).toFixed(2) 
-    : "0.00";
-
-  const denominadorUtil = horasTotalesPeriodo - totalParadasManto;
-  const utilValue = denominadorUtil > 0 
-    ? ((totalHorasTrabajo / denominadorUtil) * 100).toFixed(2) 
-    : "0.00";
-
-  // --- FETCH DATA ---
-  const fetchRendimiento = async () => {
-    try {
-      setLoading(true);
-      const [year, month] = mesSeleccionado.split('-').map(Number);
-      let query = supabase.from('reporte_diario').select('*')
-        .gte('fecha', `${mesSeleccionado}-01`)
-        .lt('fecha', month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, '0')}-01`)
-        .order('fecha', { ascending: true });
-
-      if (filtroPlaca) query = query.ilike('placa_rodaje', `%${filtroPlaca}%`);
-
-      const { data: res, error } = await query;
-      if (error) throw error;
-      setData(res || []);
-    } catch (err: any) { console.error(err.message) } finally { setLoading(false) }
-  }
-
-  useEffect(() => { fetchRendimiento() }, [mesSeleccionado, filtroPlaca])
-
-  // --- LÓGICA EXCEL: DESCARGAR CON FORMATO CORPORATIVO AZUL ---
-const descargarExcelPorPlacas = () => {
+  // --- LÓGICA DESCARGAR EXCEL ---
+  const descargarExcelPorPlacas = () => {
     if (data.length === 0) return alert("No hay datos para exportar.");
-    
     const wb = XLSX.utils.book_new();
     const placasUnicas = Array.from(new Set(data.map(item => item.placa_rodaje)));
 
-    // --- BLOQUE 1: CREAR E INSERTAR EL HISTORIAL PRIMERO (Para que sea la pestaña #1) ---
     const headerHistorial = [
       ["HISTORIAL GENERAL DE HORÓMETROS"],
-      ["PERIODO:", mesSeleccionado],
-      [],
+      ["PERIODO:", mesSeleccionado], [],
       ["FECHA", "PLACA", "H_ INICIO", "H_FINAL", "H_OPE"]
     ];
 
-    const historialOrdenado = [...data].sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
-
-    const bodyHistorial = historialOrdenado.map((item) => [
-      item.fecha, 
-      item.placa_rodaje, 
-      item.horometro_inicial,
-      item.horometro_final, 
-      (Number(item.horometro_final) - Number(item.horometro_inicial)).toFixed(2) || "0.00"
+    const bodyHistorial = [...data].sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime()).map((item) => [
+      item.fecha, item.placa_rodaje, item.horometro_inicial, item.horometro_final, Number(item.horas_trabajo).toFixed(2)
     ]);
 
-    const wsHistorial = XLSX.utils.aoa_to_sheet([...headerHistorial, ...bodyHistorial]);
-    // AL INSERTARLO AQUÍ, QUEDA EN LA PRIMERA POSICIÓN
-    XLSX.utils.book_append_sheet(wb, wsHistorial, "HISTORIAL_HOROMETROS");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([...headerHistorial, ...bodyHistorial]), "HISTORIAL_HOROMETROS");
 
-
-    // --- BLOQUE 2: LUEGO INSERTAR LAS PESTAÑAS POR PLACA ---
     placasUnicas.forEach(placa => {
       const registros = data.filter(item => item.placa_rodaje === placa);
-      
-      const p_horasTrabajo = registros.reduce((acc, item) => acc + (Number(item.horometro_final) - Number(item.horometro_inicial)), 0);
-      const p_fallas = registros.reduce((acc, item) => acc + Number(item.n_fallas), 0);
-      const p_ctvo = registros.reduce((acc, item) => acc + Number(item.manto_ctvo), 0);
-      const p_mantoTotal = registros.reduce((acc, item) => 
-        acc + Number(item.inspeccion) + Number(item.manto_prev) + Number(item.manto_prog) + Number(item.manto_ctvo), 0);
-      const p_horasPeriodo = registros.length * 24;
-
-      const p_dm = p_horasPeriodo > 0 ? (((p_horasPeriodo - p_mantoTotal) / p_horasPeriodo) * 100).toFixed(2) : "0.00";
-      const p_util = (p_horasPeriodo - p_mantoTotal) > 0 ? ((p_horasTrabajo / (p_horasPeriodo - p_mantoTotal)) * 100).toFixed(2) : "0.00";
-      const p_tpef = p_fallas > 0 ? (p_horasTrabajo / p_fallas).toFixed(2) : "0.00";
-      const p_tppr = p_fallas > 0 ? (p_ctvo / p_fallas).toFixed(2) : "0.00";
-
-      const headerRend = [
+      const wsRend = XLSX.utils.aoa_to_sheet([
         ["RENDIMIENTO DEL EQUIPO"],
-        ["CLIENTE:", "MISKIMAYO", "UNIDAD:", "BAYOVAR", "PLACA:", placa],
-        [],
-        ["DATE", "H. INICIAL", "H. FINAL", "HRS TRAB", "INSP", "PREV", "PROG", "CTVO", "ACC", "STBY", "D.M.", "% UTIL", "FALLAS", "DESCRIPCION"]
-      ];
-
-      const bodyRend = registros.map(item => {
-        const hT = Number(item.horometro_final - item.horometro_inicial);
-        const hM = Number(item.inspeccion + item.manto_prev + item.manto_prog + item.manto_ctvo);
-        return [
-          item.fecha, item.horometro_inicial, item.horometro_final, hT,
+        ["CLIENTE:", "MISKIMAYO", "UNIDAD:", "BAYOVAR", "PLACA:", placa], [],
+        ["DATE", "H. INICIAL", "H. FINAL", "HRS TRAB", "INSP", "PREV", "PROG", "CTVO", "ACC", "STBY", "D.M.", "% UTIL", "FALLAS", "DESCRIPCION"],
+        ...registros.map(item => [
+          item.fecha, item.horometro_inicial, item.horometro_final, item.horas_trabajo,
           item.inspeccion, item.manto_prev, item.manto_prog, item.manto_ctvo,
-          item.repara_acc, item.stand_by, 
-          (((24 - hM) / 24) * 100).toFixed(2) + "%", 
-          (24 - hM) > 0 ? ((hT / (24 - hM)) * 100).toFixed(2) + "%" : "0%",
+          item.repara_acc, item.stand_by, item.dm_porcentaje + "%", item.util_porcentaje + "%",
           item.n_fallas, item.descripcion || ""
-        ];
-      });
-
-      const footerRend = [
-        [],
-        ["INDICADORES RESUMEN - " + placa],
-        ["DISP. MECÁNICA (DM)", p_dm + "%"],
-        ["UTILIZACIÓN (% UTIL)", p_util + "%"],
-        ["TPEF (CONFIABILIDAD)", p_tpef + " Hrs"],
-        ["TPPR (MANTENIBILIDAD)", p_tppr + " Hrs"],
-        ["TOTAL FALLAS", p_fallas]
-      ];
-
-      const wsRend = XLSX.utils.aoa_to_sheet([...headerRend, ...bodyRend, ...footerRend]);
+        ])
+      ]);
       XLSX.utils.book_append_sheet(wb, wsRend, `${placa.slice(0, 25)}`);
     });
-
     XLSX.writeFile(wb, `Reporte_Equipos_${mesSeleccionado}.xlsx`);
-};
+  };
 
   const handleEdit = (item: any) => {
     setFormData({ ...item });
@@ -239,6 +201,7 @@ const descargarExcelPorPlacas = () => {
     e.preventDefault();
     try {
       if (isEditing && selectedId) {
+        // Importante: Actualizamos la TABLA, no la vista
         const { error } = await supabase.from('reporte_diario').update(formData).eq('id', selectedId);
         if (error) throw error;
       } else {
@@ -263,14 +226,14 @@ const descargarExcelPorPlacas = () => {
   return (
     <main className="min-h-screen bg-[#F8FAFC] p-4 md:p-8 text-slate-900">
       <div className="max-w-[1600px] mx-auto space-y-6">
-        
+
         {/* HEADER */}
         <div className="flex flex-col lg:flex-row justify-between items-center gap-6 bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200">
           <div className="flex items-center gap-4">
             <button onClick={() => router.push('/equipos')} className="p-3 hover:bg-slate-100 rounded-xl text-slate-400 transition-colors"><ChevronLeft /></button>
             <div>
               <h1 className="text-xl font-black uppercase tracking-tight leading-none">Rendimiento Operativo</h1>
-              <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">Indicadores de Gestión de Flota</p>
+              <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">Indicadores de Gestión de Flota (Vista Acumulada)</p>
             </div>
           </div>
 
@@ -280,11 +243,11 @@ const descargarExcelPorPlacas = () => {
               <input type="text" placeholder="BUSCAR PLACA..." value={filtroPlaca} onChange={(e) => setFiltroPlaca(e.target.value.toUpperCase())}
                 className="pl-10 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold focus:ring-2 ring-blue-500 outline-none w-44 transition-all" />
             </div>
-            
+
             <input type="month" value={mesSeleccionado} onChange={(e) => setMesSeleccionado(e.target.value)} className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold outline-none cursor-pointer" />
-            
+
             <div className="flex items-center gap-2">
-              <button onClick={descargarExcelPorPlacas} title="Descargar Reporte por Pestañas" className="p-3 bg-blue-50 text-blue-600 border border-blue-100 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-sm">
+              <button onClick={descargarExcelPorPlacas} title="Descargar Reporte" className="p-3 bg-blue-50 text-blue-600 border border-blue-100 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-sm">
                 <Download size={20} />
               </button>
 
@@ -300,7 +263,7 @@ const descargarExcelPorPlacas = () => {
           </div>
         </div>
 
-        {/* PANEL DE INDICADORES (6 TARJETAS) */}
+        {/* INDICADORES */}
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <div className="bg-white p-4 rounded-[1.5rem] shadow-sm border border-slate-200 flex flex-col justify-between hover:shadow-md transition-all">
             <div className="flex items-center gap-3 mb-2">
@@ -374,35 +337,28 @@ const descargarExcelPorPlacas = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-bold text-slate-600">
-                {data.map((item, idx) => {
-                  const hrsT = Number(item.horometro_final) - Number(item.horometro_inicial);
-                  const hrsM = Number(item.inspeccion) + Number(item.manto_prev) + Number(item.manto_prog) + Number(item.manto_ctvo);
-                  const dmP = (((24 - hrsM) / 24) * 100).toFixed(2);
-                  const utP = (24 - hrsM) > 0 ? ((hrsT / (24 - hrsM)) * 100).toFixed(2) : "0.00";
-
-                  return (
-                    <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-3">{item.fecha}</td>
-                      <td className="px-4 py-3">
-                        <span className="bg-slate-100 px-2 py-1 rounded text-slate-900 border border-slate-200 uppercase">{item.placa_rodaje}</span>
-                      </td>
-                      <td className="px-4 py-3 text-center">{item.horometro_inicial}</td>
-                      <td className="px-4 py-3 text-center">{item.horometro_final}</td>
-                      <td className="px-4 py-3 text-center bg-blue-50 text-blue-700 font-black">{hrsT.toFixed(2)}</td>
-                      <td className="px-2 py-3 text-center">{item.inspeccion}</td>
-                      <td className="px-2 py-3 text-center">{item.manto_prev}</td>
-                      <td className="px-2 py-3 text-center">{item.manto_prog}</td>
-                      <td className="px-2 py-3 text-center text-rose-500">{item.manto_ctvo}</td>
-                      <td className="px-2 py-3 text-center">{item.repara_acc}</td>
-                      <td className="px-2 py-3 text-center">{item.stand_by}</td>
-                      <td className="px-4 py-3 text-center text-emerald-600 font-black">{dmP}%</td>
-                      <td className="px-4 py-3 text-center text-indigo-600 font-black">{utP}%</td>
-                      <td className="px-4 py-3 text-center">
-                         <button onClick={() => handleEdit(item)} className="p-2 text-slate-400 hover:text-blue-600 transition-colors"><Settings size={14}/></button>
-                      </td>
-                    </tr>
-                  )
-                })}
+                {data.map((item, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-4 py-3">{item.fecha}</td>
+                    <td className="px-4 py-3">
+                      <span className="bg-slate-100 px-2 py-1 rounded text-slate-900 border border-slate-200 uppercase">{item.placa_rodaje}</span>
+                    </td>
+                    <td className="px-4 py-3 text-center">{item.horometro_inicial}</td>
+                    <td className="px-4 py-3 text-center">{item.horometro_final}</td>
+                    <td className="px-4 py-3 text-center bg-blue-50 text-blue-700 font-black">{Number(item.horas_trabajo).toFixed(2)}</td>
+                    <td className="px-2 py-3 text-center">{item.inspeccion}</td>
+                    <td className="px-2 py-3 text-center">{item.manto_prev}</td>
+                    <td className="px-2 py-3 text-center">{item.manto_prog}</td>
+                    <td className="px-2 py-3 text-center text-rose-500">{item.manto_ctvo}</td>
+                    <td className="px-2 py-3 text-center">{item.repara_acc}</td>
+                    <td className="px-2 py-3 text-center">{item.stand_by}</td>
+                    <td className="px-4 py-3 text-center text-emerald-600 font-black">{item.dm_porcentaje}%</td>
+                    <td className="px-4 py-3 text-center text-indigo-600 font-black">{item.util_porcentaje}%</td>
+                    <td className="px-4 py-3 text-center">
+                      <button onClick={() => handleEdit(item)} className="p-2 text-slate-400 hover:text-blue-600 transition-colors"><Settings size={14} /></button>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -411,56 +367,53 @@ const descargarExcelPorPlacas = () => {
         {/* MODAL */}
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-            <div className="bg-white w-full max-w-3xl rounded-[2rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
-              <div className="bg-slate-900 p-6 flex justify-between items-center text-white">
-                <h2 className="font-black uppercase text-sm tracking-widest flex items-center gap-2">
-                  {isEditing ? <RefreshCcw size={16} className="text-blue-400" /> : <Plus size={16} />}
-                  {isEditing ? `Editar: ${formData.placa_rodaje}` : 'Nuevo Registro Operativo'}
-                </h2>
-                <button onClick={closeAndReset} className="hover:rotate-90 transition-transform"><X /></button>
+            <div className="bg-white w-full max-w-3xl rounded-[2rem] shadow-2xl overflow-hidden">
+              <div className="bg-slate-900 p-6 flex justify-between items-center text-white font-black uppercase text-sm">
+                <span>{isEditing ? `Editar: ${formData.placa_rodaje}` : 'Nuevo Registro Operativo'}</span>
+                <button onClick={closeAndReset}><X /></button>
               </div>
               <form onSubmit={handleGuardar} className="p-8 grid grid-cols-4 gap-4">
                 <div className="col-span-2 space-y-1">
                   <label className="text-[10px] font-bold uppercase text-slate-400">Unidad (Placa)</label>
-                  <input required type="text" value={formData.placa_rodaje} onChange={(e) => setFormData({...formData, placa_rodaje: e.target.value.toUpperCase()})} className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl font-bold outline-none focus:ring-2 ring-blue-500 transition-all" />
+                  <input required type="text" value={formData.placa_rodaje} onChange={(e) => setFormData({ ...formData, placa_rodaje: e.target.value.toUpperCase() })} className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl font-bold" />
                 </div>
                 <div className="col-span-2 space-y-1">
                   <label className="text-[10px] font-bold uppercase text-slate-400">Fecha</label>
-                  <input required type="date" value={formData.fecha} onChange={(e) => setFormData({...formData, fecha: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl font-bold outline-none" />
+                  <input required type="date" value={formData.fecha} onChange={(e) => setFormData({ ...formData, fecha: e.target.value })} className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl font-bold" />
                 </div>
                 <div className="col-span-2 space-y-1">
                   <label className="text-[10px] font-bold uppercase text-slate-400">Horómetro Inicial</label>
-                  <input required type="number" step="0.01" value={formData.horometro_inicial} onChange={(e) => setFormData({...formData, horometro_inicial: Number(e.target.value)})} className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl font-bold outline-none" />
+                  <input required type="number" step="0.01" value={formData.horometro_inicial} onChange={(e) => setFormData({ ...formData, horometro_inicial: Number(e.target.value) })} className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl font-bold" />
                 </div>
                 <div className="col-span-2 space-y-1">
                   <label className="text-[10px] font-bold uppercase text-slate-400">Horómetro Final</label>
-                  <input required type="number" step="0.01" value={formData.horometro_final} onChange={(e) => setFormData({...formData, horometro_final: Number(e.target.value)})} className="w-full p-3 bg-blue-50 border-blue-200 rounded-xl font-bold outline-none" />
+                  <input required type="number" step="0.01" value={formData.horometro_final} onChange={(e) => setFormData({ ...formData, horometro_final: Number(e.target.value) })} className="w-full p-3 bg-blue-50 border-blue-200 rounded-xl font-bold" />
                 </div>
-                
+
                 <div className="grid grid-cols-6 col-span-4 gap-2 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                   {['inspeccion', 'manto_prev', 'manto_prog', 'manto_ctvo', 'repara_acc', 'stand_by'].map((field) => (
-                     <div key={field} className="space-y-1">
-                       <label className="text-[9px] font-bold uppercase text-slate-500">{field.replace('manto_', '').slice(0, 4)}</label>
-                       <input type="number" step="0.01" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold text-xs focus:bg-white transition-colors outline-none" 
-                        value={(formData as any)[field]} onChange={(e) => setFormData({...formData, [field]: Number(e.target.value)})} />
-                     </div>
-                   ))}
+                  {['inspeccion', 'manto_prev', 'manto_prog', 'manto_ctvo', 'repara_acc', 'stand_by'].map((field) => (
+                    <div key={field} className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase text-slate-500">{field.replace('manto_', '').slice(0, 4)}</label>
+                      <input type="number" step="0.01" className="w-full p-2 border border-slate-200 rounded-lg text-center font-bold text-xs"
+                        value={(formData as any)[field]} onChange={(e) => setFormData({ ...formData, [field]: Number(e.target.value) })} />
+                    </div>
+                  ))}
                 </div>
 
                 <div className="col-span-2 space-y-1">
                   <label className="text-[10px] font-bold uppercase text-slate-400">N° Fallas</label>
-                  <input type="number" value={formData.n_fallas} onChange={(e) => setFormData({...formData, n_fallas: Number(e.target.value)})} className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl font-bold outline-none focus:ring-2 ring-amber-500 transition-all" />
+                  <input type="number" value={formData.n_fallas} onChange={(e) => setFormData({ ...formData, n_fallas: Number(e.target.value) })} className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl font-bold" />
                 </div>
-                
+
                 <div className="col-span-4 space-y-1">
                   <label className="text-[10px] font-bold uppercase text-slate-400">Observaciones</label>
-                  <textarea value={formData.descripcion || ''} onChange={(e) => setFormData({...formData, descripcion: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs h-16 outline-none focus:bg-white transition-colors" />
+                  <textarea value={formData.descripcion || ''} onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })} className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs h-16 outline-none focus:bg-white transition-colors" />
                 </div>
-                
+
                 <div className="col-span-4 flex gap-3 mt-4">
                   {isEditing && (
                     <button type="button" onClick={handleEliminar} className="flex-1 bg-rose-50 text-rose-600 p-4 rounded-xl font-black uppercase text-xs hover:bg-rose-600 hover:text-white transition-all flex items-center justify-center gap-2">
-                      <Trash2 size={16}/> Eliminar
+                      <Trash2 size={16} /> Eliminar
                     </button>
                   )}
                   <button type="submit" className="flex-[2] bg-slate-900 text-white p-4 rounded-xl font-black uppercase text-xs hover:bg-blue-600 transition-all shadow-lg">

@@ -1,12 +1,21 @@
 "use client"
-import { useEffect, useState, Suspense } from 'react'
+import { useEffect, useState, Suspense, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { ArrowLeft, Search, Wrench, Activity } from 'lucide-react'
+import { ArrowLeft, Search, Wrench, Activity, Calendar, Clock, CheckCircle2, Filter } from 'lucide-react'
 
 import { TablaEventos } from './TablaEventos';
 import ModalDetalle from './ModalDetalle';
 import { ModalFormulario } from './ModalFormulario';
+
+// ✅ MEJORADO: Obtener fecha local exacta YYYY-MM-DD sin errores de zona horaria
+const obtenerFechaLocal = () => {
+    const ahora = new Date();
+    const anio = ahora.getFullYear();
+    const mes = String(ahora.getMonth() + 1).padStart(2, '0');
+    const dia = String(ahora.getDate()).padStart(2, '0');
+    return `${anio}-${mes}-${dia}`;
+};
 
 function HistorialFormContent() {
     const router = useRouter()
@@ -25,9 +34,8 @@ function HistorialFormContent() {
     const [repuestosCargados, setRepuestosCargados] = useState<any[]>([])
     const [nuevoRepuesto, setNuevoRepuesto] = useState({ descripcion: '', cantidad: 1 })
 
-    // 1. Estado inicial sincronizado con tu tabla SQL
     const initialForm = {
-        fecha_evento: new Date().toISOString().split('T')[0],
+        fecha_evento: obtenerFechaLocal(),
         placa: '',
         ubic: '',
         horometro: '',
@@ -42,12 +50,31 @@ function HistorialFormContent() {
     }
     const [form, setForm] = useState(initialForm)
 
+    const stats = useMemo(() => {
+        const hoy = obtenerFechaLocal();
+        return {
+            total: registros.length,
+            hoy: registros.filter(r => r.fecha_evento === hoy).length,
+            duracionTotal: registros.reduce((acc, curr) => acc + (Number(curr.duracion) || 0), 0).toFixed(1)
+        };
+    }, [registros]);
+
     const fetchRegistros = async () => {
         setCargando(true);
         const { data, error } = await supabase.from('historial_eventos')
             .select('*')
             .order('fecha_evento', { ascending: false });
-        if (!error) setRegistros(data || []);
+
+        if (!error && data) {
+            // ✅ CORRECCIÓN DEFINITIVA: Limpiamos la fecha de cualquier residuo de zona horaria (T00:00:00)
+            const registrosCorregidos = data.map(reg => ({
+                ...reg,
+                fecha_evento: typeof reg.fecha_evento === 'string'
+                    ? reg.fecha_evento.split('T')[0]
+                    : reg.fecha_evento
+            }));
+            setRegistros(registrosCorregidos);
+        }
         setCargando(false);
     }
 
@@ -55,7 +82,12 @@ function HistorialFormContent() {
         fetchRegistros();
         const placaUrl = searchParams.get('placa');
         if (placaUrl) {
-            setForm(prev => ({ ...prev, placa: placaUrl.toUpperCase(), horometro: searchParams.get('horo') || '' }));
+            setForm(prev => ({
+                ...prev,
+                placa: placaUrl.toUpperCase(),
+                horometro: searchParams.get('horo') || '',
+                fecha_evento: obtenerFechaLocal()
+            }));
             setShowModal(true);
         }
     }, [searchParams]);
@@ -87,26 +119,28 @@ function HistorialFormContent() {
     }
 
     const guardarEvento = async () => {
-        if (!form.placa || !form.horometro || !form.sistema) return alert("⚠️ Datos básicos incompletos");
+        if (!form.placa || !form.horometro || !form.sistema || !form.tipoTrabajo) {
+            return alert("⚠️ Datos básicos incompletos");
+        }
 
-        // 2. Lógica para calcular duración automáticamente
         let duracionCalculada = 0;
         if (form.H_inicial && form.H_final) {
             const [h1, m1] = form.H_inicial.split(':').map(Number);
             const [h2, m2] = form.H_final.split(':').map(Number);
             const inicio = h1 + m1 / 60;
             const fin = h2 + m2 / 60;
-
-            // Si la hora final es menor a la inicial, asumimos que pasó al día siguiente
             duracionCalculada = fin > inicio ? fin - inicio : (24 - inicio) + fin;
         }
 
+        const duracionFinal = Number(duracionCalculada.toFixed(2));
+        const placaLimpia = form.placa.trim().toUpperCase();
+
         setEnviando(true);
+
         try {
-            // 3. Objeto de datos que respeta los nombres de tu tabla SQL
             const dataToSave = {
                 fecha_evento: form.fecha_evento,
-                placa: form.placa.trim().toUpperCase(),
+                placa: placaLimpia,
                 ubic: form.ubic?.toUpperCase() || '',
                 horometro: Number(form.horometro),
                 sistema: form.sistema.trim().toUpperCase(),
@@ -116,19 +150,26 @@ function HistorialFormContent() {
                 tipoTrabajo: form.tipoTrabajo,
                 H_inicial: form.H_inicial || null,
                 H_final: form.H_final || null,
-                duracion: Number(duracionCalculada.toFixed(2))
+                duracion: duracionFinal
             };
 
             let evId = verEvento?.id;
 
             if (isEditing && evId) {
-                const { error: errorUpd } = await supabase.from('historial_eventos').update(dataToSave).eq('id', evId);
-                if (errorUpd) throw errorUpd;
+                const { error } = await supabase.from('historial_eventos').update(dataToSave).eq('id', evId);
+                if (error) throw error;
                 await supabase.from('repuestos_utilizados').delete().eq('evento_id', evId);
             } else {
-                const { data, error: errorIns } = await supabase.from('historial_eventos').insert([dataToSave]).select().single();
-                if (errorIns) throw errorIns;
+                const { data, error } = await supabase.from('historial_eventos').insert([dataToSave]).select().single();
+                if (error) throw error;
                 evId = data.id;
+            }
+
+            if (form.tipoTrabajo !== "INSPECCION") {
+                await supabase.from('maestroEquipos').update({
+                    status: 'INOPERATIVO',
+                    obs: form.evento || ''
+                }).eq('placaRodaje', placaLimpia);
             }
 
             if (repuestos.length > 0) {
@@ -148,11 +189,11 @@ function HistorialFormContent() {
             setForm(initialForm);
             setRepuestos([]);
             setEspecificarSistema(false);
-            alert("✅ Guardado con éxito");
+            alert("✅ Registro procesado exitosamente.");
 
-        } catch (e) {
-            console.error("Error en Guardado:", e);
-            alert("Error al guardar el reporte");
+        } catch (e: any) {
+            console.error(e);
+            alert(`Error: ${e.message}`);
         } finally {
             setEnviando(false);
         }
@@ -181,33 +222,87 @@ function HistorialFormContent() {
 
     const registrosFiltrados = registros.filter(r =>
         r.placa.toLowerCase().includes(busqueda.toLowerCase()) ||
-        r.sistema.toLowerCase().includes(busqueda.toLowerCase())
+        r.sistema.toLowerCase().includes(busqueda.toLowerCase()) ||
+        r.tecnico?.toLowerCase().includes(busqueda.toLowerCase())
     );
 
     return (
-        <div className="max-w-[1400px] mx-auto">
-            <div className="flex flex-col md:flex-row items-center justify-between bg-white px-5 py-3 rounded-2xl border border-slate-100 shadow-sm mb-6 gap-4">
-                <div className="flex items-center gap-3">
-                    <button onClick={() => router.push('/equipos')} className="p-2 bg-slate-50 rounded-lg text-slate-400 hover:text-blue-600 border border-slate-100"><ArrowLeft size={16} /></button>
+        <div className="max-w-[1440px] mx-auto space-y-6">
+            {/* Cabecera Principal */}
+            <div className="bg-white p-5 rounded-[2.5rem] border border-slate-200/60 shadow-xl shadow-slate-200/40 flex flex-col lg:flex-row items-center justify-between gap-6">
+                <div className="flex items-center gap-5 w-full lg:w-auto">
+                    <button
+                        onClick={() => router.push('/equipos')}
+                        className="p-3 bg-slate-50 rounded-2xl text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all border border-slate-100"
+                    >
+                        <ArrowLeft size={20} />
+                    </button>
                     <div>
-                        <h1 className="text-sm font-black text-slate-800 uppercase tracking-tighter">Historial de Eventos</h1>
-                        <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">{registrosFiltrados.length} Registros</p>
+                        <h1 className="text-xl font-black text-slate-800 uppercase tracking-tighter leading-none">Historial de Eventos</h1>
+                        <div className="flex items-center gap-2 mt-1.5">
+                            <span className="relative flex h-2 w-2">
+                                <span className="absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75 animate-ping"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                            </span>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Sincronizado con Supabase</p>
+                        </div>
                     </div>
                 </div>
-                <div className="relative w-full md:w-80">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
-                    <input type="text" placeholder="Buscar..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-[10px] font-bold outline-none" />
+
+                <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
+                    <div className="relative w-full sm:w-80 group">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-500 transition-colors" size={18} />
+                        <input
+                            type="text"
+                            placeholder="Buscar placa, sistema o técnico..."
+                            value={busqueda}
+                            onChange={(e) => setBusqueda(e.target.value)}
+                            className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-100 rounded-2xl text-xs font-bold outline-none focus:ring-4 focus:ring-blue-500/5 focus:bg-white transition-all shadow-inner"
+                        />
+                    </div>
+
+                    <button
+                        onClick={() => { setForm(initialForm); setIsEditing(false); setRepuestos([]); setEspecificarSistema(false); setShowModal(true); }}
+                        className="w-full sm:w-auto px-8 py-3.5 bg-blue-600 text-white rounded-2xl font-black text-[11px] uppercase tracking-[0.15em] hover:bg-blue-700 hover:shadow-blue-200 hover:-translate-y-0.5 transition-all shadow-lg shadow-blue-100 flex items-center justify-center gap-3"
+                    >
+                        <Wrench size={16} /> NUEVO REGISTRO
+                    </button>
                 </div>
-                <button
-                    onClick={() => { setForm(initialForm); setIsEditing(false); setRepuestos([]); setEspecificarSistema(false); setShowModal(true); }}
-                    className="px-5 py-2 bg-blue-600 text-white rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-blue-700 shadow-md flex items-center gap-2"
-                >
-                    <Wrench size={12} /> + NUEVO EVENTO
-                </button>
             </div>
 
-            <TablaEventos registros={registrosFiltrados} cargando={cargando} onVerDetalle={setVerEvento} />
+            {/* Panel de Indicadores */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                {[
+                    { label: 'Eventos Totales', val: stats.total, icon: <Calendar size={22} />, color: 'text-blue-600', bg: 'bg-blue-50' },
+                    { label: 'Horas Invertidas', val: `${stats.duracionTotal}h`, icon: <Clock size={22} />, color: 'text-amber-600', bg: 'bg-amber-50' },
+                    { label: 'Registros Hoy', val: stats.hoy, icon: <CheckCircle2 size={22} />, color: 'text-green-600', bg: 'bg-green-50' }
+                ].map((item, i) => (
+                    <div key={i} className="bg-white p-6 rounded-[2rem] border border-slate-200/50 shadow-sm flex items-center gap-5 hover:border-blue-200 transition-colors group">
+                        <div className={`p-4 ${item.bg} ${item.color} rounded-2xl group-hover:scale-110 transition-transform`}>
+                            {item.icon}
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{item.label}</p>
+                            <p className="text-2xl font-black text-slate-800">{item.val}</p>
+                        </div>
+                    </div>
+                ))}
+            </div>
 
+            {/* Tabla */}
+            <div className="bg-white rounded-[2.5rem] border border-slate-200/60 shadow-xl shadow-slate-200/30 overflow-hidden">
+                <div className="px-8 py-5 border-b border-slate-50 flex items-center justify-between bg-slate-50/30">
+                    <div className="flex items-center gap-2">
+                        <Filter size={14} className="text-blue-500" />
+                        <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Mostrando {registrosFiltrados.length} resultados</span>
+                    </div>
+                </div>
+                <div className="p-4">
+                    <TablaEventos registros={registrosFiltrados} cargando={cargando} onVerDetalle={setVerEvento} />
+                </div>
+            </div>
+
+            {/* Modales */}
             <ModalDetalle
                 verEvento={verEvento}
                 setVerEvento={setVerEvento}
@@ -239,8 +334,16 @@ function HistorialFormContent() {
 
 export default function HistorialEventosPage() {
     return (
-        <main className="min-h-screen bg-[#F8FAFC] p-6 md:p-8">
-            <Suspense fallback={<div className="flex justify-center p-20"><Activity className="animate-spin text-blue-500" /></div>}>
+        <main className="min-h-screen bg-[#F8FAFC] p-4 md:p-10 font-sans">
+            <Suspense fallback={
+                <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6">
+                    <div className="relative">
+                        <div className="h-16 w-16 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"></div>
+                        <Activity className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-blue-600" size={24} />
+                    </div>
+                    <p className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] animate-pulse">Sincronizando Historial...</p>
+                </div>
+            }>
                 <HistorialFormContent />
             </Suspense>
         </main>
