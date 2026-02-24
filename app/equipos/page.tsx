@@ -211,13 +211,18 @@ export default function MaestroEquiposPage() {
             </div>
           </div>
 
-          {/* NUEVO BOTÓN DE ESTATUS */}
-
-
           <div className="flex flex-col md:flex-row items-center gap-3 flex-1 md:justify-end w-full">
 
+            {/* BOTÓN MANTENIMIENTO AÑADIDO */}
             <button
-              onClick={() => router.push('/estatus')} // Ajusta la ruta a tu archivo de estatus
+              onClick={() => router.push('/repuestos')}
+              className="flex items-center gap-2 px-6 py-3.5 bg-orange-500 text-white rounded-2xl font-bold text-[11px] uppercase tracking-widest hover:bg-orange-600 shadow-lg shadow-orange-100 active:scale-95 whitespace-nowrap"
+            >
+              <Settings size={18} /> repuestos
+            </button>
+
+            <button
+              onClick={() => router.push('/estatus')}
               className="flex items-center gap-2 px-6 py-3.5 bg-emerald-600 text-white rounded-2xl font-bold text-[11px] uppercase tracking-widest hover:bg-emerald-700 shadow-lg shadow-emerald-100 active:scale-95 whitespace-nowrap"
             >
               <ShieldCheck size={18} /> Estatus
