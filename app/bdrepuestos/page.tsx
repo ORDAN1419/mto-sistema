@@ -37,7 +37,7 @@ export default function RepuestosPage() {
     // Estados para Formulario
     const [editId, setEditId] = useState<string | null>(null)
     const [form, setForm] = useState({
-        clase_vehiculo: '', // <--- Mantenido/Asegurado
+        clase_vehiculo: '',
         modelo: '',
         marca: '',
         year_fabricacion: '',
@@ -74,9 +74,14 @@ export default function RepuestosPage() {
     // --- LÓGICA DE FORMULARIO ---
     const resetForm = () => {
         setForm({
-            clase_vehiculo: '', // <--- Reset incluido
-            modelo: '', marca: '', marca: '', year_fabricacion: '',
-            codigo_almacen: '', numero_parte: '', descripcion_repuesto: '', info_tecnica: ''
+            clase_vehiculo: '',
+            modelo: '',
+            marca: '', // <--- Corregido: Se eliminó duplicado de 'marca'
+            year_fabricacion: '',
+            codigo_almacen: '',
+            numero_parte: '',
+            descripcion_repuesto: '',
+            info_tecnica: ''
         })
         setFiles([])
         setExistingPhotos([])
@@ -314,7 +319,17 @@ export default function RepuestosPage() {
                                                 <button
                                                     onClick={() => {
                                                         setEditId(item.id);
-                                                        setForm(item as any);
+                                                        // Extraemos solo los campos del formulario para evitar pasar id o created_at
+                                                        setForm({
+                                                            clase_vehiculo: item.clase_vehiculo || '',
+                                                            modelo: item.modelo || '',
+                                                            marca: item.marca || '',
+                                                            year_fabricacion: item.year_fabricacion || '',
+                                                            codigo_almacen: item.codigo_almacen || '',
+                                                            numero_parte: item.numero_parte || '',
+                                                            descripcion_repuesto: item.descripcion_repuesto || '',
+                                                            info_tecnica: item.info_tecnica || ''
+                                                        });
                                                         setExistingPhotos(item.urls_fotos || []);
                                                         setShowModal(true);
                                                     }}
@@ -384,10 +399,7 @@ export default function RepuestosPage() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <InputField label="Nombre Repuesto *" value={form.descripcion_repuesto} onChange={v => setForm({ ...form, descripcion_repuesto: v })} placeholder="Ej: Disco de Freno" />
                                 <InputField label="Código Almacén *" value={form.codigo_almacen} onChange={v => setForm({ ...form, codigo_almacen: v })} placeholder="Ej: ALM-001" mono />
-
-                                {/* NUEVO CAMPO: CLASE VEHÍCULO */}
                                 <InputField label="Clase Vehículo" value={form.clase_vehiculo} onChange={v => setForm({ ...form, clase_vehiculo: v })} placeholder="Ej: Camioneta, Sedan, etc." />
-
                                 <InputField label="Marca" value={form.marca} onChange={v => setForm({ ...form, marca: v })} placeholder="Ej: Brembo" />
                                 <InputField label="Modelo Vehículo" value={form.modelo} onChange={v => setForm({ ...form, modelo: v })} placeholder="Ej: Corolla 2023" />
                                 <InputField label="Año Fab." value={form.year_fabricacion} onChange={v => setForm({ ...form, year_fabricacion: v })} placeholder="2023" />
@@ -411,6 +423,7 @@ export default function RepuestosPage() {
                                         <div key={i} className="relative aspect-square rounded-xl overflow-hidden border group">
                                             <img src={url} className="w-full h-full object-cover" alt="" />
                                             <button
+                                                type="button"
                                                 onClick={() => setExistingPhotos(prev => prev.filter((_, idx) => idx !== i))}
                                                 className="absolute top-1 right-1 bg-rose-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
                                             >
@@ -433,8 +446,9 @@ export default function RepuestosPage() {
                                 {files.length > 0 && (
                                     <div className="flex flex-wrap gap-2">
                                         {files.map((f, idx) => (
-                                            <span key={idx} className="text-[9px] bg-blue-50 text-blue-600 px-2 py-1 rounded-lg font-bold">
+                                            <span key={idx} className="text-[9px] bg-blue-50 text-blue-600 px-2 py-1 rounded-lg font-bold flex items-center gap-1">
                                                 {f.name}
+                                                <button type="button" onClick={() => setFiles(prev => prev.filter((_, i) => i !== idx))}><X size={10} /></button>
                                             </span>
                                         ))}
                                     </div>
