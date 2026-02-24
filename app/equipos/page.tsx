@@ -6,7 +6,7 @@ import {
   Truck, Settings, MapPin, Search,
   Activity, AlertTriangle, Gauge, LogOut,
   ChevronDown, Info, ClipboardList, X, Check, Save, Calendar, Eye, Clock, Wrench, ShieldCheck,
-  Database // <-- Importado para el nuevo botón
+  Database, PackageSearch // Importado para el nuevo botón de gestión
 } from 'lucide-react'
 
 // --- INTERFAZ COMPLETA ---
@@ -212,48 +212,51 @@ export default function MaestroEquiposPage() {
             </div>
           </div>
 
-          <div className="flex flex-col md:flex-row items-center gap-3 flex-1 md:justify-end w-full">
+          <div className="flex flex-col gap-3 w-full md:w-auto">
+            {/* FILA 1: BUSCADOR Y BOTONES PRINCIPALES */}
+            <div className="flex flex-col md:flex-row items-center gap-3 md:justify-end w-full">
+              <button
+                onClick={() => router.push('/bdrepuestos')}
+                className="flex items-center gap-2 px-6 py-3.5 bg-indigo-600 text-white rounded-2xl font-bold text-[11px] uppercase tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-100 active:scale-95 whitespace-nowrap"
+              >
+                <Database size={18} /> BD Repuestos
+              </button>
 
-            {/* BOTÓN BASE DE DATOS REPUESTOS (NUEVO) */}
-            <button
-              onClick={() => router.push('/bdrepuestos')}
-              className="flex items-center gap-2 px-6 py-3.5 bg-indigo-600 text-white rounded-2xl font-bold text-[11px] uppercase tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-100 active:scale-95 whitespace-nowrap"
-            >
-              <Database size={18} /> BD Repuestos
-            </button>
+              <button
+                onClick={() => router.push('/estatus')}
+                className="flex items-center gap-2 px-6 py-3.5 bg-emerald-600 text-white rounded-2xl font-bold text-[11px] uppercase tracking-widest hover:bg-emerald-700 shadow-lg shadow-emerald-100 active:scale-95 whitespace-nowrap"
+              >
+                <ShieldCheck size={18} /> Estatus
+              </button>
+              <button onClick={() => router.push('/rendimiento')} className="flex items-center gap-2 px-6 py-3.5 bg-blue-600 text-white rounded-2xl font-bold text-[11px] uppercase tracking-widest hover:bg-blue-700 shadow-lg shadow-blue-100 active:scale-95 whitespace-nowrap">
+                <Activity size={18} /> Rendimiento
+              </button>
+              <button onClick={() => router.push('/historial-horometro')} className="flex items-center gap-2 px-6 py-3.5 bg-slate-800 text-white rounded-2xl font-bold text-[11px] uppercase tracking-widest hover:bg-slate-700 shadow-md active:scale-95 whitespace-nowrap">
+                <ClipboardList size={18} /> Historial
+              </button>
+              <div className="relative w-full md:w-64">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                <input
+                  onChange={(e) => setBusqueda(e.target.value)}
+                  placeholder="Buscar placa..."
+                  className="w-full pl-12 pr-6 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-inner italic"
+                />
+              </div>
+            </div>
 
-            {/* BOTÓN MANTENIMIENTO AÑADIDO */}
-            <button
-              onClick={() => router.push('/repuestos')}
-              className="flex items-center gap-2 px-6 py-3.5 bg-orange-500 text-white rounded-2xl font-bold text-[11px] uppercase tracking-widest hover:bg-orange-600 shadow-lg shadow-orange-100 active:scale-95 whitespace-nowrap"
-            >
-              <Settings size={18} /> repuestos
-            </button>
-
-            <button
-              onClick={() => router.push('/estatus')}
-              className="flex items-center gap-2 px-6 py-3.5 bg-emerald-600 text-white rounded-2xl font-bold text-[11px] uppercase tracking-widest hover:bg-emerald-700 shadow-lg shadow-emerald-100 active:scale-95 whitespace-nowrap"
-            >
-              <ShieldCheck size={18} /> Estatus
-            </button>
-            <button onClick={() => router.push('/rendimiento')} className="flex items-center gap-2 px-6 py-3.5 bg-blue-600 text-white rounded-2xl font-bold text-[11px] uppercase tracking-widest hover:bg-blue-700 shadow-lg shadow-blue-100 active:scale-95 whitespace-nowrap">
-              <Activity size={18} /> Rendimiento
-            </button>
-            <button onClick={() => router.push('/historial-horometro')} className="flex items-center gap-2 px-6 py-3.5 bg-slate-800 text-white rounded-2xl font-bold text-[11px] uppercase tracking-widest hover:bg-slate-700 shadow-md active:scale-95 whitespace-nowrap">
-              <ClipboardList size={18} /> Historial
-            </button>
-            <div className="relative w-full md:w-64">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
-              <input
-                onChange={(e) => setBusqueda(e.target.value)}
-                placeholder="Buscar placa, código, marca..."
-                className="w-full pl-12 pr-6 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-inner italic"
-              />
+            {/* FILA 2: NUEVO BOTÓN DE GESTIÓN DE REPUESTOS */}
+            <div className="flex flex-row items-center gap-3 md:justify-end w-full">
+              <button
+                onClick={() => router.push('/repuestos')}
+                className="flex items-center gap-2 px-8 py-3.5 bg-orange-500 text-white rounded-2xl font-bold text-[11px] uppercase tracking-widest hover:bg-orange-600 shadow-lg shadow-orange-100 active:scale-95 whitespace-nowrap w-full md:w-auto justify-center"
+              >
+                <PackageSearch size={18} /> Gestión Repuestos (Ingresos/Salidas)
+              </button>
             </div>
           </div>
         </header>
 
-        {/* ... Resto del componente (Celdas de equipos, Modal, etc.) se mantiene exactamente igual ... */}
+        {/* ... Resto del componente se mantiene intacto ... */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
           {filtrados.map((equipo) => {
             const isExpanded = abierto === equipo.placaRodaje;
