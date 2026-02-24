@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import {
   Truck, Settings, MapPin, Search,
   Activity, AlertTriangle, Gauge, LogOut,
-  ChevronDown, Info, ClipboardList, X, Check, Save, Calendar, Eye, Clock, Wrench, ShieldCheck
+  ChevronDown, Info, ClipboardList, X, Check, Save, Calendar, Eye, Clock, Wrench, ShieldCheck,
+  Database // <-- Importado para el nuevo botón
 } from 'lucide-react'
 
 // --- INTERFAZ COMPLETA ---
@@ -213,6 +214,14 @@ export default function MaestroEquiposPage() {
 
           <div className="flex flex-col md:flex-row items-center gap-3 flex-1 md:justify-end w-full">
 
+            {/* BOTÓN BASE DE DATOS REPUESTOS (NUEVO) */}
+            <button
+              onClick={() => router.push('/bdrepuestos')}
+              className="flex items-center gap-2 px-6 py-3.5 bg-indigo-600 text-white rounded-2xl font-bold text-[11px] uppercase tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-100 active:scale-95 whitespace-nowrap"
+            >
+              <Database size={18} /> BD Repuestos
+            </button>
+
             {/* BOTÓN MANTENIMIENTO AÑADIDO */}
             <button
               onClick={() => router.push('/repuestos')}
@@ -244,6 +253,7 @@ export default function MaestroEquiposPage() {
           </div>
         </header>
 
+        {/* ... Resto del componente (Celdas de equipos, Modal, etc.) se mantiene exactamente igual ... */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
           {filtrados.map((equipo) => {
             const isExpanded = abierto === equipo.placaRodaje;
