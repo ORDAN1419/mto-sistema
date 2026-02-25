@@ -351,6 +351,7 @@ export default function RepuestosPage() {
                                                                                         <div className="space-y-4">
                                                                                             <div className="grid grid-cols-2 gap-2">
                                                                                                 <DataCard label="Nº PARTE" value={item.numero_parte || ''} mono />
+                                                                                                <DataCard label="COD. ALMECEN" value={item.codigo_almacen || ''} mono />
                                                                                                 <DataCard label="MODELO" value={item.modelo || ''} />
                                                                                                 <DataCard label="AÑO" value={item.year_fabricacion || ''} />
                                                                                                 <DataCard label="CLASE" value={item.clase_vehiculo || ''} />
