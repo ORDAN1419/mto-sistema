@@ -3,7 +3,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import {
     Package, Search, Plus, Trash2, Edit3, X, Save,
-    Image as ImageIcon, Loader2, ChevronDown, ChevronUp, Tag, Folder, Database, Info, Layers, Filter, Truck
+    Image as ImageIcon, Loader2, ChevronDown, ChevronUp, Tag, Folder, Database, Info, Layers, Filter, Truck, Maximize2
 } from 'lucide-react'
 
 // --- INTERFAZ FIEL A TU SQL ---
@@ -43,6 +43,9 @@ export default function RepuestosPage() {
     const [expandedId, setExpandedId] = useState<string | null>(null)
     const [openNodes, setOpenNodes] = useState<string[]>([]);
     const [editId, setEditId] = useState<string | null>(null)
+
+    // ✅ NUEVO: ESTADO PARA ZOOM DE IMAGEN (NO BORRA NADA ANTERIOR)
+    const [zoomImg, setZoomImg] = useState<string | null>(null)
 
     // --- ESTADOS PARA BÚSQUEDA DE EQUIPO ---
     const [busquedaEquipo, setBusquedaEquipo] = useState('')
@@ -345,7 +348,12 @@ export default function RepuestosPage() {
                                                                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                                                                         <div className="flex gap-2 overflow-x-auto pb-2 snap-x">
                                                                                             {item.urls_fotos?.length > 0 ? item.urls_fotos.map((url, idx) => (
-                                                                                                <img key={idx} src={url} className="h-40 w-40 object-cover rounded-xl border border-white shadow-md snap-center shrink-0" />
+                                                                                                <img
+                                                                                                    key={idx}
+                                                                                                    src={url}
+                                                                                                    onClick={() => setZoomImg(url)} // ✅ LLAMA AL ZOOM
+                                                                                                    className="h-40 w-40 object-cover rounded-xl border border-white shadow-md snap-center shrink-0 cursor-zoom-in hover:opacity-90 transition-all"
+                                                                                                />
                                                                                             )) : <div className="h-40 w-40 bg-white rounded-xl border-2 border-dashed border-slate-200 flex items-center justify-center text-slate-300"><ImageIcon size={32} /></div>}
                                                                                         </div>
                                                                                         <div className="space-y-4">
@@ -404,10 +412,18 @@ export default function RepuestosPage() {
                 </div>
             </div>
 
+            {/* ✅ MODAL DE ZOOM (AÑADIDO AL FINAL, NO BORRA NADA) */}
+            {zoomImg && (
+                <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-md flex items-center justify-center p-4 md:p-10" onClick={() => setZoomImg(null)}>
+                    <button className="absolute top-5 right-5 text-white p-2 hover:bg-white/10 rounded-full transition-colors"><X size={32} /></button>
+                    <img src={zoomImg} className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl transition-transform duration-300 hover:scale-105" onClick={(e) => e.stopPropagation()} />
+                </div>
+            )}
+
             {/* --- MODAL DE FORMULARIO --- */}
             {showModal && (
                 <div className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-                    <div className="bg-white w-full max-w-3xl rounded-[2rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                    <div className="bg-white w-full max-w-3xl rounded-[2rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border border-white/20">
                         <div className="p-6 border-b flex justify-between items-center bg-slate-50">
                             <h2 className="text-lg font-black text-slate-800 uppercase italic">{editId ? 'Modificar Registro' : 'Nuevo Repuesto'}</h2>
                             <button onClick={resetForm} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X size={20} /></button>
@@ -415,7 +431,7 @@ export default function RepuestosPage() {
 
                         <div className="p-6 overflow-y-auto space-y-6">
                             {/* --- BUSCADOR INTELIGENTE DE PLACA/EQUIPO --- */}
-                            <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100 relative">
+                            <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100 relative shadow-inner">
                                 <label className="text-[10px] font-black text-blue-600 uppercase block mb-2 flex items-center gap-2">
                                     <Truck size={12} /> Autocompletar por Placa o Código de Equipo
                                 </label>
@@ -426,14 +442,13 @@ export default function RepuestosPage() {
                                         placeholder="Escribe Placa o Código (ej. ABC-123)..."
                                         value={busquedaEquipo}
                                         onChange={(e) => setBusquedaEquipo(e.target.value)}
-                                        className="w-full pl-10 pr-4 py-3 bg-white rounded-xl border-2 border-transparent focus:border-blue-500 text-sm outline-none shadow-sm"
+                                        className="w-full pl-10 pr-4 py-3 bg-white rounded-xl border-2 border-transparent focus:border-blue-500 text-sm outline-none shadow-sm uppercase font-bold"
                                     />
                                     {buscandoEquipo && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-blue-400" size={16} />}
                                 </div>
 
-                                {/* Lista de sugerencias */}
                                 {sugerenciasEquipo.length > 0 && (
-                                    <div className="absolute left-4 right-4 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-50 max-h-48 overflow-y-auto">
+                                    <div className="absolute left-4 right-4 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-50 max-h-48 overflow-y-auto uppercase">
                                         {sugerenciasEquipo.map((equipo) => (
                                             <button
                                                 key={equipo.placaRodaje}
@@ -449,24 +464,24 @@ export default function RepuestosPage() {
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <InputField label="Nombre Repuesto *" value={form.descripcion_repuesto} onChange={v => setForm({ ...form, descripcion_repuesto: v })} placeholder="Filtro de Aire Primario" />
-                                <InputField label="Código Almacén *" value={form.codigo_almacen} onChange={v => setForm({ ...form, codigo_almacen: v })} placeholder="ALM-001" mono />
-                                <InputField label="Sistema (Categoría)" value={form.sistema} onChange={v => setForm({ ...form, sistema: v })} placeholder="MOTOR / FRENOS / CHASIS" />
-                                <InputField label="Clase Vehículo" value={form.clase_vehiculo} onChange={v => setForm({ ...form, clase_vehiculo: v })} placeholder="Equipo Pesado" />
-                                <InputField label="Marca" value={form.marca} onChange={v => setForm({ ...form, marca: v })} placeholder="Volvo / Scania" />
-                                <InputField label="Modelo" value={form.modelo} onChange={v => setForm({ ...form, modelo: v })} placeholder="FMX 460" />
-                                <InputField label="Año" value={form.year_fabricacion} onChange={v => setForm({ ...form, year_fabricacion: v })} placeholder="2024" />
-                                <InputField label="Número de Parte" value={form.numero_parte} onChange={v => setForm({ ...form, numero_parte: v })} placeholder="PN-2024-X" mono />
+                                <InputField label="Nombre Repuesto *" value={form.descripcion_repuesto || ''} onChange={v => setForm({ ...form, descripcion_repuesto: v })} placeholder="Nombre..." />
+                                <InputField label="Código Almacén *" value={form.codigo_almacen || ''} onChange={v => setForm({ ...form, codigo_almacen: v })} placeholder="ALM-001" mono />
+                                <InputField label="Sistema (Categoría)" value={form.sistema || ''} onChange={v => setForm({ ...form, sistema: v })} placeholder="MOTOR / FRENOS..." />
+                                <InputField label="Clase Vehículo" value={form.clase_vehiculo || ''} onChange={v => setForm({ ...form, clase_vehiculo: v })} placeholder="Equipo Pesado" />
+                                <InputField label="Marca" value={form.marca || ''} onChange={v => setForm({ ...form, marca: v })} placeholder="Marca..." />
+                                <InputField label="Modelo" value={form.modelo || ''} onChange={v => setForm({ ...form, modelo: v })} placeholder="Modelo..." />
+                                <InputField label="Año" value={form.year_fabricacion || ''} onChange={v => setForm({ ...form, year_fabricacion: v })} placeholder="2024" />
+                                <InputField label="Número de Parte" value={form.numero_parte || ''} onChange={v => setForm({ ...form, numero_parte: v })} placeholder="PN-..." mono />
                             </div>
 
                             <div>
                                 <label className="text-[10px] font-black text-slate-400 uppercase block mb-2">Información Técnica</label>
                                 <textarea
-                                    value={form.info_tecnica}
+                                    value={form.info_tecnica || ''}
                                     onChange={e => setForm({ ...form, info_tecnica: e.target.value })}
-                                    className="w-full p-4 bg-slate-50 rounded-xl border-2 border-transparent focus:border-slate-900 outline-none text-sm"
+                                    className="w-full p-4 bg-slate-50 rounded-xl border-2 border-transparent focus:border-slate-900 outline-none text-sm shadow-inner"
                                     rows={3}
-                                    placeholder="Especificaciones, medidas, compatibilidad..."
+                                    placeholder="Especificaciones..."
                                 />
                             </div>
 
@@ -474,9 +489,9 @@ export default function RepuestosPage() {
                                 <label className="text-[10px] font-black text-slate-400 uppercase block mb-2">Galería de Imágenes</label>
                                 <div className="grid grid-cols-4 md:grid-cols-6 gap-2">
                                     {existingPhotos.map((url, i) => (
-                                        <div key={i} className="relative aspect-square rounded-lg overflow-hidden border">
+                                        <div key={i} className="relative aspect-square rounded-lg overflow-hidden border group">
                                             <img src={url} className="w-full h-full object-cover" />
-                                            <button onClick={() => setExistingPhotos(prev => prev.filter((_, idx) => idx !== i))} className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full"><X size={8} /></button>
+                                            <button onClick={() => setExistingPhotos(prev => prev.filter((_, idx) => idx !== i))} className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"><X size={8} /></button>
                                         </div>
                                     ))}
                                     <label className="aspect-square bg-slate-50 rounded-lg border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-400 cursor-pointer hover:bg-slate-100 transition-colors">
@@ -484,13 +499,12 @@ export default function RepuestosPage() {
                                         <input type="file" multiple className="hidden" onChange={e => e.target.files && setFiles(prev => [...prev, ...Array.from(e.target.files!)])} />
                                     </label>
                                 </div>
-                                {files.length > 0 && <p className="text-[9px] text-blue-500 mt-2 font-bold">{files.length} imágenes nuevas listas para subir</p>}
                             </div>
                         </div>
 
                         <div className="p-6 bg-slate-50 border-t flex gap-3">
-                            <button onClick={resetForm} className="flex-1 py-3 bg-white rounded-xl font-bold text-xs uppercase border border-slate-200 hover:bg-slate-100 transition-colors">Cancelar</button>
-                            <button onClick={handleGuardar} disabled={subiendo} className="flex-[2] py-3 bg-slate-900 text-white rounded-xl font-bold text-xs uppercase hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2 transition-all">
+                            <button onClick={resetForm} className="flex-1 py-3 bg-white rounded-xl font-bold text-xs uppercase border border-slate-200 hover:bg-slate-100 transition-colors shadow-sm">Cancelar</button>
+                            <button onClick={handleGuardar} disabled={subiendo} className="flex-[2] py-3 bg-slate-900 text-white rounded-xl font-bold text-xs uppercase hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2 transition-all shadow-lg">
                                 {subiendo ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
                                 {editId ? 'Actualizar Repuesto' : 'Registrar en DB'}
                             </button>
@@ -506,8 +520,8 @@ export default function RepuestosPage() {
 function DataCard({ label, value, mono = false }: { label: string, value: string, mono?: boolean }) {
     return (
         <div className="bg-white p-2.5 rounded-xl border border-slate-100 shadow-sm">
-            <p className="text-[7px] text-slate-400 font-black uppercase mb-0.5 tracking-tighter">{label}</p>
-            <p className={`text-[10px] font-bold text-slate-700 truncate ${mono ? 'font-mono' : ''}`}>{value || '---'}</p>
+            <p className="text-[7px] text-slate-400 font-black uppercase mb-0.5 tracking-tighter leading-none">{label}</p>
+            <p className={`text-[10px] font-bold text-slate-700 truncate leading-tight ${mono ? 'font-mono' : ''}`}>{value || '---'}</p>
         </div>
     )
 }
@@ -521,7 +535,7 @@ function InputField({ label, value, onChange, placeholder, mono = false }: { lab
                 placeholder={placeholder}
                 value={value}
                 onChange={e => onChange(e.target.value)}
-                className={`w-full p-3 bg-slate-50 rounded-xl border-2 border-transparent focus:border-slate-900 text-sm transition-all outline-none ${mono ? 'font-mono' : ''}`}
+                className={`w-full p-3 bg-slate-50 rounded-xl border-2 border-transparent focus:border-slate-900 text-sm transition-all outline-none shadow-inner uppercase font-bold ${mono ? 'font-mono' : ''}`}
             />
         </div>
     )
