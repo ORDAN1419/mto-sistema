@@ -18,8 +18,9 @@ import {
     RotateCw,
     Pencil,
     Calendar,
-    History, // ✅ Nuevo
-    AlertCircle // ✅ Nuevo
+    History,
+    AlertCircle,
+    Wrench // ✅ Corregido: Ahora está importado
 } from 'lucide-react';
 
 // --- TIPADOS ---
@@ -28,11 +29,12 @@ interface Repuesto {
     codigo_almacen: string;
     codigo_fabricante: string;
     descripcion: string;
-    status: 'Creado' | 'Enviado' | 'Pedido' | 'Concluido' | 'Instalado'; // ✅ Instalado añadido
+    status: 'Creado' | 'Enviado' | 'Pedido' | 'Concluido' | 'Instalado';
     criticidad: 'Alta' | 'Media' | 'Baja';
     fecha_pedido: string;
     cantidad?: number;
-    falla_general?: string; // ✅ Campo virtual
+    falla_general?: string;
+    es_servicio?: boolean; // ✅ Añadido para evitar errores de tipado en la tabla
 }
 
 interface GrupoEquipo {
@@ -40,7 +42,7 @@ interface GrupoEquipo {
     placa: string;
     fecha: string;
     codigo_interno: string;
-    falla_grupo: string; // ✅ Nuevo
+    falla_grupo: string;
     repuestos: Repuesto[];
 }
 
@@ -50,13 +52,14 @@ interface MasterEquipo {
 }
 
 interface ItemFormulario {
-    id?: string;
+    id?: string; // ✅ El id es opcional para que funcione en creación y edición
     id_temp: string;
     codigoalmacen: string;
     codigo_repuesto: string;
     descripcion: string;
     cantidad: number;
-    status: 'Creado' | 'Enviado' | 'Pedido' | 'Concluido' | 'Instalado'; // ✅ Instalado añadido
+    status: 'Creado' | 'Enviado' | 'Pedido' | 'Concluido' | 'Instalado';
+    es_servicio?: boolean;
 }
 
 export default function SeguimientoRepuestosPage() {
@@ -64,7 +67,7 @@ export default function SeguimientoRepuestosPage() {
     const [busqueda, setBusqueda] = useState('');
     const [todosAbiertos, setTodosAbiertos] = useState(false);
     const [ocultarCompletados, setOcultarCompletados] = useState(false);
-    const [mostrarHistorial, setMostrarHistorial] = useState(false); // ✅ Nuevo Checkbox
+    const [mostrarHistorial, setMostrarHistorial] = useState(false);
     const [abiertosIndividuales, setAbiertosIndividuales] = useState<{ [key: string]: boolean }>({});
     const [dbStatus, setDbStatus] = useState<'online' | 'offline' | 'checking'>('checking');
     const [loading, setLoading] = useState(true);
@@ -77,10 +80,9 @@ export default function SeguimientoRepuestosPage() {
 
     // --- ESTADO FORMULARIO ---
     const [placaSeleccionada, setPlacaSeleccionada] = useState('');
-    const [motivoPedido, setMotivoPedido] = useState(''); // ✅ Nuevo motivo
+    const [motivoPedido, setMotivoPedido] = useState('');
     const [criticidadGeneral, setCriticidadGeneral] = useState<'Alta' | 'Media' | 'Baja'>('Media');
 
-    // Función para obtener fecha local sin desfase
     const getFechaLocal = () => {
         const d = new Date();
         const offset = d.getTimezoneOffset() * 60000;
@@ -89,15 +91,14 @@ export default function SeguimientoRepuestosPage() {
 
     const [fechaGeneral, setFechaGeneral] = useState(getFechaLocal());
     const [listaItems, setListaItems] = useState<ItemFormulario[]>([]);
-    const [tempItem, setTempItem] = useState({
+    const [tempItem, setTempItem] = useState<any>({
         codigoalmacen: '',
         codigo_repuesto: '',
         descripcion: '',
         cantidad: 1,
-        status: 'Creado' as any
+        status: 'Creado'
     });
 
-    // --- CARGA DE DATOS ---
     const cargarDatos = useCallback(async () => {
         setLoading(true);
         setDbStatus('checking');
@@ -126,14 +127,13 @@ export default function SeguimientoRepuestosPage() {
 
     useEffect(() => { cargarDatos() }, [cargarDatos]);
 
-    // --- LÓGICA DE FILTRADO INTELIGENTE ---
     const procesarDatosParaVista = (): GrupoEquipo[] => {
         const grupos: { [key: string]: GrupoEquipo } = {};
         const terminos = busqueda.toLowerCase().trim().split(/\s+/);
 
         registrosRaw.forEach(reg => {
             const placaMatch = reg.descripcion.match(/\[(.*?)\]/);
-            const fallaMatch = reg.descripcion.match(/\{(.*?)\}/); // ✅ Extraer motivo de {}
+            const fallaMatch = reg.descripcion.match(/\{(.*?)\}/);
 
             const placa = placaMatch ? placaMatch[1] : 'S/P';
             const falla = fallaMatch ? fallaMatch[1] : 'SIN MOTIVO ESPECIFICADO';
@@ -141,7 +141,6 @@ export default function SeguimientoRepuestosPage() {
             const idGrupo = `${placa}-${fecha}`;
 
             const descLimpia = reg.descripcion.replace(/\[.*?\]/, '').replace(/\{.*?\}/, '').trim();
-
             const infoMaster = equiposMaster.find(m => m.placaRodaje === placa);
             const codInt = infoMaster ? infoMaster.codigoEquipo : 'EQUIPO ' + placa;
 
@@ -154,14 +153,13 @@ export default function SeguimientoRepuestosPage() {
                 criticidad: reg.criticidad || 'Media',
                 fecha_pedido: fecha,
                 cantidad: reg.cantidad || 1,
-                falla_general: falla
+                falla_general: falla,
+                es_servicio: reg.es_servicio
             };
 
-            // ✅ LÓGICA DE VISIBILIDAD SOLICITADA
             if (!mostrarHistorial && item.status === 'Instalado') return;
             if (ocultarCompletados && (item.status === 'Concluido' || item.status === 'Instalado')) return;
 
-            // Filtro Multi-término
             const contenidoBusqueda = `${placa} ${codInt} ${item.descripcion} ${falla}`.toLowerCase();
             const coincide = terminos.every(t => contenidoBusqueda.includes(t));
 
@@ -176,10 +174,9 @@ export default function SeguimientoRepuestosPage() {
         return Object.values(grupos);
     };
 
-    // --- ACCIONES ---
     const prepararEdicion = (repuesto: Repuesto, placa: string) => {
         setPlacaSeleccionada(placa);
-        setMotivoPedido(repuesto.falla_general || ''); // ✅ Cargar motivo
+        setMotivoPedido(repuesto.falla_general || '');
         setFechaGeneral(repuesto.fecha_pedido);
         setCriticidadGeneral(repuesto.criticidad);
         setListaItems([{
@@ -227,14 +224,17 @@ export default function SeguimientoRepuestosPage() {
                     fecha_cambio: fechaGeneral,
                     codigo_repuesto: item.codigo_repuesto,
                     codigoalmacen: item.codigoalmacen,
-                    // ✅ FORMATO: [PLACA] {MOTIVO} DESCRIPCION
                     descripcion: `[${placaSeleccionada}] {${motivoPedido.toUpperCase()}} ${item.descripcion}`,
                     cantidad: item.cantidad,
                     status: item.status,
                     criticidad: criticidadGeneral
                 };
-                if (modoEdicion && item.id) {
-                    await supabase.from('repuestos_utilizados').update(payload).eq('id', item.id);
+
+                // ✅ Corregido: Uso de casting para que TypeScript no marque error en el .id
+                const itemId = (item as any).id;
+
+                if (modoEdicion && itemId) {
+                    await supabase.from('repuestos_utilizados').update(payload).eq('id', itemId);
                 } else {
                     await supabase.from('repuestos_utilizados').insert([payload]);
                 }
@@ -277,7 +277,6 @@ export default function SeguimientoRepuestosPage() {
                     </div>
 
                     <div className="flex flex-wrap gap-3 items-center">
-                        {/* ✅ CHECKBOX HISTORIAL */}
                         <label className="flex items-center gap-2 bg-white px-4 py-2.5 rounded-xl border-2 border-slate-200 cursor-pointer hover:bg-slate-50 transition-all shadow-sm">
                             <input type="checkbox" checked={mostrarHistorial} onChange={(e) => setMostrarHistorial(e.target.checked)} className="w-4 h-4 text-blue-600 rounded" />
                             <div className="flex items-center gap-2">
@@ -422,7 +421,6 @@ export default function SeguimientoRepuestosPage() {
     );
 }
 
-// --- SUBCOMPONENTE ACORDEON ---
 function AcordeonEquipo({ equipo, isOpen, onToggle, onUpdateStatus, onDeleteItem, onEditItem }: any) {
     const calcularDiasTotales = () => {
         const partes = equipo.fecha.split('-');
@@ -451,13 +449,10 @@ function AcordeonEquipo({ equipo, isOpen, onToggle, onUpdateStatus, onDeleteItem
             <button onClick={onToggle} className={`w-full flex flex-col md:flex-row md:items-center justify-between p-5 hover:bg-slate-50 transition-colors text-left gap-4 ${isOpen ? 'bg-slate-50/80' : ''}`}>
                 <div className="flex flex-wrap items-center gap-4 md:gap-8">
                     <div className="bg-slate-900 text-white font-black px-4 py-2 rounded-xl text-lg tracking-tighter shadow-sm">{equipo.placa}</div>
-
-                    {/* ✅ MOTIVO VISIBLE SIN EXPANDIR */}
                     <div className="flex-1 min-w-[200px]">
                         <p className="text-[9px] text-blue-500 uppercase font-black tracking-widest mb-1">Motivo del Pedido</p>
                         <p className="text-slate-800 font-black text-sm uppercase truncate max-w-sm">{equipo.falla_grupo}</p>
                     </div>
-
                     <div className="flex items-center gap-2 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
                         <Calendar size={14} className="text-blue-500" />
                         <span className="text-sm font-black text-blue-700">{equipo.fecha.split('-').reverse().join('/')}</span>
@@ -486,7 +481,6 @@ function AcordeonEquipo({ equipo, isOpen, onToggle, onUpdateStatus, onDeleteItem
 
             {isOpen && (
                 <div className="p-6 border-t border-slate-100 bg-white animate-in slide-in-from-top duration-300">
-                    {/* ✅ BANNER DE MOTIVO EN ABIERTO */}
                     <div className="mb-6 flex items-start gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-100 shadow-inner">
                         <AlertCircle className="text-blue-500 mt-1 shrink-0" size={20} />
                         <div>
@@ -515,6 +509,7 @@ function AcordeonEquipo({ equipo, isOpen, onToggle, onUpdateStatus, onDeleteItem
                                         </td>
                                         <td className="py-4 font-bold text-slate-700 uppercase tracking-tighter">
                                             <div className="flex items-center gap-2">
+                                                {/* ✅ Corregido: Wrench ahora funciona sin error */}
                                                 {r.es_servicio ? <Wrench size={14} className="text-orange-500" /> : <Package size={14} className="text-blue-500" />}
                                                 {r.descripcion} <span className="text-blue-500 font-black ml-1">x{r.cantidad}</span>
                                             </div>
