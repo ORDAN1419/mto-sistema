@@ -1,12 +1,21 @@
 "use client"
-import { useEffect, useState, Suspense, useRef, useCallback } from 'react'
+import React, { useEffect, useState, Suspense, useRef, useCallback } from 'react' // ✅ React agregado para Fragment
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 import {
-  Calendar, ChevronLeft, LayoutDashboard, AlertTriangle,
-  CheckCircle2, RefreshCcw, Clock, Settings, Plus, X, Trash2, Search, Gauge, Upload, Download, Truck, Save
+  Calendar, ChevronLeft, LayoutDashboard, AlertTriangle, ChevronDown, ChevronUp,
+  CheckCircle2, RefreshCcw, Clock, Settings, Plus, X, Trash2, Search, Gauge, Upload, Download, Truck, Save, Wrench, Info
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+
+// ✅ FUNCIÓN PARA OBTENER FECHA LOCAL REAL
+const obtenerFechaHoyLocal = () => {
+  const ahora = new Date();
+  const anio = ahora.getFullYear();
+  const mes = String(ahora.getMonth() + 1).padStart(2, '0');
+  const dia = String(ahora.getDate()).padStart(2, '0');
+  return `${anio}-${mes}-${dia}`;
+};
 
 // --- INTERFACES ---
 interface MaestroEquipo {
@@ -27,18 +36,24 @@ function RendimientoContent() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [data, setData] = useState<any[]>([])
+  const [eventosDetalle, setEventosDetalle] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [expandedRow, setExpandedRow] = useState<string | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [mesSeleccionado, setMesSeleccionado] = useState(new Date().toISOString().split('-').slice(0, 2).join('-'))
+
+  const [eventoSeleccionado, setEventoSeleccionado] = useState<any>(null)
+  const [isDetalleEventoOpen, setIsDetalleEventoOpen] = useState(false)
+
+  const [mesSeleccionado, setMesSeleccionado] = useState(obtenerFechaHoyLocal().slice(0, 7))
   const [filtroPlaca, setFiltroPlaca] = useState('')
 
   const [busquedaPlaca, setBusquedaPlaca] = useState('')
   const [sugerencias, setSugerencias] = useState<MaestroEquipo[]>([])
 
   const initialFormState = {
-    fecha: new Date().toISOString().split('T')[0],
+    fecha: obtenerFechaHoyLocal(),
     placa_rodaje: '',
     horometro_inicial: '' as any,
     horometro_final: '' as any,
@@ -47,22 +62,10 @@ function RendimientoContent() {
 
   const [formData, setFormData] = useState(initialFormState)
 
-  const buscarPlacas = useCallback(async (termino: string) => {
-    if (!termino) { setSugerencias([]); return; }
-    try {
-      const { data: res, error } = await supabase
-        .from('maestroEquipos')
-        .select('placaRodaje, codigoEquipo')
-        .or(`placaRodaje.ilike.%${termino}%,codigoEquipo.ilike.%${termino}%`)
-        .limit(6);
-      if (!error && res) setSugerencias(res);
-    } catch (e) { console.error(e) }
-  }, []);
-
-  useEffect(() => {
-    const timer = setTimeout(() => buscarPlacas(busquedaPlaca), 200);
-    return () => clearTimeout(timer);
-  }, [busquedaPlaca, buscarPlacas]);
+  const fetchEventosDetalle = async () => {
+    const { data: res } = await supabase.from('historial_eventos').select('*');
+    if (res) setEventosDetalle(res);
+  }
 
   const fetchRendimiento = async () => {
     try {
@@ -77,11 +80,21 @@ function RendimientoContent() {
       const { data: res, error } = await query;
       if (error) throw error;
       setData(res || []);
+      await fetchEventosDetalle();
     } catch (err: any) { console.error(err.message) }
     finally { setLoading(false) }
   }
 
   useEffect(() => { fetchRendimiento() }, [mesSeleccionado, filtroPlaca])
+
+  const toggleRow = (id: string) => {
+    setExpandedRow(expandedRow === id ? null : id);
+  }
+
+  const abrirModalDetalle = (ev: any) => {
+    setEventoSeleccionado(ev);
+    setIsDetalleEventoOpen(true);
+  }
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -121,7 +134,8 @@ function RendimientoContent() {
     setSugerencias([]);
   }
 
-  const handleEdit = (item: any) => {
+  const handleEdit = (item: any, e: React.MouseEvent) => {
+    e.stopPropagation();
     setFormData({ ...item });
     setBusquedaPlaca(item.placa_rodaje || '');
     setSelectedId(item.id);
@@ -153,7 +167,6 @@ function RendimientoContent() {
     } catch (err: any) { alert(err.message) }
   }
 
-  // ✅ FUNCIÓN RESTAURADA
   const handleEliminar = async () => {
     if (!selectedId || !confirm("¿Eliminar este registro de horómetro?")) return;
     try {
@@ -162,6 +175,19 @@ function RendimientoContent() {
       closeAndReset(); fetchRendimiento();
     } catch (err: any) { alert(err.message) }
   }
+
+  const buscarPlacas = useCallback(async (termino: string) => {
+    if (!termino) { setSugerencias([]); return; }
+    try {
+      const { data: res, error } = await supabase.from('maestroEquipos').select('placaRodaje, codigoEquipo').or(`placaRodaje.ilike.%${termino}%,codigoEquipo.ilike.%${termino}%`).limit(6);
+      if (!error && res) setSugerencias(res);
+    } catch (e) { console.error(e) }
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => buscarPlacas(busquedaPlaca), 200);
+    return () => clearTimeout(timer);
+  }, [busquedaPlaca, buscarPlacas]);
 
   const totalHorasTrabajo = data.reduce((acc, item) => acc + Number(item.horas_trabajo || 0), 0);
   const totalFallas = data.reduce((acc, item) => acc + Number(item.n_fallas || 0), 0);
@@ -205,27 +231,138 @@ function RendimientoContent() {
           <DataCard label="HRS OPER" val={totalHorasTrabajo.toFixed(2)} icon={<CheckCircle2 />} color="text-slate-600" bg="bg-slate-50" />
         </div>
 
-        {/* TABLA */}
+        {/* TABLA CON ACORDEÓN */}
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-[11px]">
               <thead>
-                <tr className="bg-slate-900 text-white uppercase font-black tracking-wider">
-                  <th className="px-4 py-4">FECHA</th><th className="px-4 py-4">UNIDAD</th><th className="px-4 py-4 text-center">H. INI</th><th className="px-4 py-4 text-center">H. FIN</th><th className="px-4 py-4 text-center bg-blue-800">HRS TRAB</th><th className="px-2 py-4 text-center">INSP</th><th className="px-2 py-4 text-center">PREV</th><th className="px-2 py-4 text-center">PROG</th><th className="px-2 py-4 text-center text-rose-300">CTVO</th><th className="px-2 py-4 text-center">ACC</th><th className="px-2 py-4 text-center">S.BY</th><th className="px-4 py-4 text-center bg-emerald-800">D.M.%</th><th className="px-4 py-4 text-center bg-indigo-800">% UTIL</th><th className="px-4 py-4 text-center">OPC</th>
+                <tr className="bg-slate-900 text-white uppercase font-black tracking-wider text-center">
+                  <th className="px-4 py-4 text-left">HIST.</th>
+                  <th className="px-4 py-4 text-left">FECHA</th>
+                  <th className="px-4 py-4 text-left">UNIDAD</th>
+                  <th className="px-4 py-4">H. INI</th>
+                  <th className="px-4 py-4">H. FIN</th>
+                  <th className="px-4 py-4 bg-blue-800">HRS TRAB</th>
+                  <th className="px-2 py-4">INSP</th>
+                  <th className="px-2 py-4">PREV</th>
+                  <th className="px-2 py-4">PROG</th>
+                  <th className="px-2 py-4 text-rose-300">CTVO</th>
+                  <th className="px-2 py-4">ACC</th>
+                  <th className="px-2 py-4">S.BY</th>
+                  <th className="px-4 py-4 bg-emerald-800">D.M.%</th>
+                  <th className="px-4 py-4 bg-indigo-800">% UTIL</th>
+                  <th className="px-4 py-4">OPC</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-bold text-slate-600">
-                {data.map((item, idx) => (
-                  <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-3">{item.fecha}</td><td className="px-4 py-3"><span className="bg-slate-100 px-2 py-1 rounded text-slate-900 border border-slate-200 uppercase">{item.placa_rodaje}</span></td><td className="px-4 py-3 text-center">{item.horometro_inicial}</td><td className="px-4 py-3 text-center">{item.horometro_final}</td><td className="px-4 py-3 text-center bg-blue-50 text-blue-700 font-black">{Number(item.horas_trabajo).toFixed(2)}</td><td className="px-2 py-3 text-center">{item.inspeccion}</td><td className="px-2 py-3 text-center">{item.manto_prev}</td><td className="px-2 py-3 text-center">{item.manto_prog}</td><td className="px-2 py-3 text-center text-rose-500">{item.manto_ctvo}</td><td className="px-2 py-3 text-center">{item.repara_acc}</td><td className="px-2 py-3 text-center">{item.stand_by}</td><td className="px-4 py-3 text-center text-emerald-600 font-black">{item.dm_porcentaje}%</td><td className="px-4 py-3 text-center text-indigo-600 font-black">{item.util_porcentaje}%</td><td className="px-4 py-3 text-center"><button onClick={() => handleEdit(item)} className="p-2 text-slate-400 hover:text-blue-600"><Settings size={14} /></button></td>
-                  </tr>
-                ))}
+                {data.map((item, idx) => {
+                  const esExpandido = expandedRow === item.id;
+                  const relacionados = eventosDetalle.filter(e => e.placa === item.placa_rodaje && e.fecha_evento === item.fecha);
+
+                  return (
+                    <React.Fragment key={idx}>
+                      <tr onClick={() => toggleRow(item.id)} className={`cursor-pointer transition-colors ${esExpandido ? 'bg-blue-50/20' : 'hover:bg-slate-50'}`}>
+                        <td className="px-4 py-3 text-center">{relacionados.length > 0 ? (esExpandido ? <ChevronUp size={16} /> : <ChevronDown size={16} />) : null}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">{item.fecha}</td>
+                        <td className="px-4 py-3"><span className="bg-slate-100 px-2 py-1 rounded text-slate-900 border border-slate-200 uppercase">{item.placa_rodaje}</span></td>
+                        <td className="px-4 py-3 text-center">{item.horometro_inicial}</td>
+                        <td className="px-4 py-3 text-center">{item.horometro_final}</td>
+                        <td className="px-4 py-3 text-center bg-blue-50 text-blue-700 font-black">{Number(item.horas_trabajo).toFixed(2)}</td>
+                        <td className="px-2 py-3 text-center">{item.inspeccion}</td>
+                        <td className="px-2 py-3 text-center">{item.manto_prev}</td>
+                        <td className="px-2 py-3 text-center">{item.manto_prog}</td>
+                        <td className="px-2 py-3 text-center text-rose-500">{item.manto_ctvo}</td>
+                        <td className="px-2 py-3 text-center">{item.repara_acc}</td>
+                        <td className="px-2 py-3 text-center">{item.stand_by}</td>
+                        <td className="px-4 py-3 text-center text-emerald-600 font-black">{item.dm_porcentaje}%</td>
+                        <td className="px-4 py-3 text-center text-indigo-600 font-black">{item.util_porcentaje}%</td>
+                        <td className="px-4 py-3 text-center"><button onClick={(e) => handleEdit(item, e)} className="p-2 text-slate-400 hover:text-blue-600"><Settings size={14} /></button></td>
+                      </tr>
+
+                      {/* ✅ ACORDEÓN CON ALINEACIÓN PRECISA BAJO COLUMNAS */}
+                      {esExpandido && (
+                        <tr className="bg-slate-50/50">
+                          <td colSpan={15} className="p-0 border-l-4 border-l-blue-600 shadow-inner">
+                            <div className="px-6 py-2 space-y-1">
+                              {relacionados.map((ev, i) => (
+                                <div key={i} onClick={() => abrirModalDetalle(ev)} className="flex items-center text-[10px] bg-white border border-slate-200 rounded-lg p-2 shadow-sm hover:border-blue-400 cursor-pointer group">
+                                  {/* Tipo de Trabajo - Calza bajo HIST/FECHA */}
+                                  <div className="w-[18%] font-black text-blue-600 uppercase flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>{ev.tipoTrabajo}</div>
+
+                                  {/* Sistema y Evento - Calza bajo UNIDAD/H.INI/H.FIN */}
+                                  <div className="flex-grow font-bold text-slate-600 uppercase truncate pr-4">[{ev.sistema}] {ev.evento}</div>
+
+                                  {/* ✅ BLOQUE DE DURACIONES: Calza bajo INSP, PREV, PROG, CTVO, ACC */}
+                                  <div className="flex w-[26%] justify-around items-center font-black">
+                                    <div className={`w-8 text-center ${ev.tipoTrabajo === 'INSPECCION' ? 'text-blue-600 bg-blue-50 rounded' : 'text-slate-200'}`}>{ev.tipoTrabajo === 'INSPECCION' ? ev.duracion : '-'}</div>
+                                    <div className={`w-8 text-center ${ev.tipoTrabajo === 'MTTO. PREV' ? 'text-blue-600 bg-blue-50 rounded' : 'text-slate-200'}`}>{ev.tipoTrabajo === 'MTTO. PREV' ? ev.duracion : '-'}</div>
+                                    <div className={`w-8 text-center ${ev.tipoTrabajo === 'MTTO. PROG' ? 'text-blue-600 bg-blue-50 rounded' : 'text-slate-100'}`}>{ev.tipoTrabajo === 'MTTO. PROG' ? ev.duracion : '-'}</div>
+                                    <div className={`w-8 text-center ${ev.tipoTrabajo === 'MTTO. CORRECTIVO' ? 'text-rose-600 bg-rose-50 rounded' : 'text-slate-100'}`}>{ev.tipoTrabajo === 'MTTO. CORRECTIVO' ? ev.duracion : '-'}</div>
+                                    <div className={`w-8 text-center ${ev.tipoTrabajo === 'ACCIDENTE' ? 'text-rose-600 bg-rose-50 rounded' : 'text-slate-100'}`}>{ev.tipoTrabajo === 'ACCIDENTE' ? ev.duracion : '-'}</div>
+                                  </div>
+                                  <div className="w-[4%] flex justify-end"><Info size={14} className="text-slate-300 group-hover:text-blue-500" /></div>
+                                </div>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
 
-        {/* MODAL */}
+        {/* ✅ MODAL DE INFORMACIÓN TÉCNICA RICA */}
+        {isDetalleEventoOpen && eventoSeleccionado && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
+            <div className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl border border-slate-100 overflow-hidden">
+              <div className="bg-slate-900 p-6 flex justify-between items-center text-white">
+                <div className="flex items-center gap-3"><Wrench size={20} className="text-blue-400" /><h2 className="font-black uppercase text-sm tracking-widest leading-none">Información Detallada</h2></div>
+                <button onClick={() => setIsDetalleEventoOpen(false)}><X size={24} /></button>
+              </div>
+              <div className="p-8 space-y-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 shadow-inner">
+                    <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Unidad / Placa</p>
+                    <p className="text-sm font-black text-slate-800 tracking-tighter">{eventoSeleccionado.placa}</p>
+                  </div>
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 shadow-inner">
+                    <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Horómetro Evento</p>
+                    <p className="text-sm font-black text-blue-600 font-mono">{eventoSeleccionado.horometro}</p>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-[9px] font-black text-slate-400 uppercase ml-2 mb-1">Sistema y Clasificación</p>
+                    <div className="flex gap-2">
+                      <span className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[10px] font-black uppercase">{eventoSeleccionado.tipoTrabajo}</span>
+                      <span className="px-3 py-1.5 bg-slate-100 text-slate-800 rounded-lg text-[10px] font-black uppercase border border-slate-200">{eventoSeleccionado.sistema}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-black text-slate-400 uppercase ml-2 mb-1">Relato Técnico del Evento</p>
+                    <div className="p-5 bg-blue-50/30 rounded-2xl text-xs text-slate-600 italic leading-relaxed border border-blue-50">"{eventoSeleccionado.evento}"</div>
+                  </div>
+                </div>
+                <div className="flex justify-between items-center p-4 bg-slate-900 text-white rounded-2xl shadow-xl">
+                  <div className="text-center flex-1 border-r border-slate-700">
+                    <p className="text-[8px] font-black opacity-60 uppercase mb-1 tracking-widest">Técnico Resp.</p>
+                    <p className="text-xs font-black uppercase tracking-tight">{eventoSeleccionado.tecnico}</p>
+                  </div>
+                  <div className="text-center flex-1">
+                    <p className="text-[8px] font-black opacity-60 uppercase mb-1 tracking-widest">Duración Total</p>
+                    <p className="text-xs font-black text-emerald-400">{eventoSeleccionado.duracion} Horas</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL DE EDICIÓN - PRESERVADO */}
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
             <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col">
@@ -238,7 +375,19 @@ function RendimientoContent() {
                   <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest leading-none">Unidad</label>
                   <div className="relative group">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-500 transition-colors" size={18} />
-                    <input required type="text" placeholder="Filtrar placa..." value={busquedaPlaca || ''} onChange={(e) => { setBusquedaPlaca(e.target.value.toUpperCase()); setFormData({ ...formData, placa_rodaje: e.target.value.toUpperCase() }); }} className="w-full pl-12 p-4 bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-2xl font-black text-sm outline-none transition-all shadow-inner" />
+                    {/* ✅ FIX BUSCADOR: Al escribir llama a setBusquedaPlaca para activar el buscador predictivo */}
+                    <input
+                      required
+                      type="text"
+                      placeholder="Filtrar placa..."
+                      value={busquedaPlaca || ''}
+                      onChange={(e) => {
+                        const val = e.target.value.toUpperCase();
+                        setBusquedaPlaca(val);
+                        setFormData({ ...formData, placa_rodaje: val });
+                      }}
+                      className="w-full pl-12 p-4 bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-2xl font-black text-sm outline-none transition-all shadow-inner"
+                    />
                   </div>
                   {sugerencias.length > 0 && (
                     <div className="absolute top-full left-0 right-0 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[70] mt-2 overflow-hidden animate-in fade-in zoom-in-95">
@@ -265,10 +414,7 @@ function RendimientoContent() {
                   </div>
                 </div>
                 <div className="flex gap-4 pt-2">
-                  {isEditing && (
-                    <button type="button" onClick={handleEliminar} className="flex-1 bg-rose-50 text-rose-600 p-5 rounded-[1.5rem] font-black uppercase text-[10px] tracking-widest hover:bg-rose-600 hover:text-white transition-all flex items-center justify-center gap-2"><Trash2 size={16} /></button>
-                  )}
-                  <button type="submit" className="flex-[2] bg-slate-900 text-white p-5 rounded-[1.5rem] font-black uppercase text-[10px] tracking-widest hover:bg-blue-600 transition-all shadow-xl flex items-center justify-center gap-3 active:scale-[0.98]"><Save size={18} /> {isEditing ? 'Actualizar' : 'Guardar'}</button>
+                  <button type="submit" className="w-full bg-slate-900 text-white p-5 rounded-[1.5rem] font-black uppercase text-[10px] tracking-widest hover:bg-blue-600 transition-all shadow-xl flex items-center justify-center gap-3 active:scale-[0.98]"><Save size={18} /> {isEditing ? 'Actualizar' : 'Guardar'}</button>
                 </div>
               </form>
             </div>

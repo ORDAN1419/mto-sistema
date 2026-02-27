@@ -1,4 +1,7 @@
-import { X, FileText, CheckCircle, Edit3, Trash2, Activity, Package, Clock, Settings, MapPin } from 'lucide-react';
+import {
+    X, FileText, CheckCircle, Edit3, Trash2, Activity, Package,
+    Clock, Settings, MapPin, Hash, Inbox, PenTool // ✅ Importación agregada
+} from 'lucide-react';
 
 const ModalDetalle = ({
     verEvento,
@@ -15,7 +18,6 @@ const ModalDetalle = ({
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
             <div className="bg-white w-full max-w-5xl rounded-[2.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 border border-slate-200">
 
-                {/* 1. Cabecera con Badge de Estatus */}
                 <div className="flex justify-between items-center p-6 bg-slate-50 border-b border-slate-100">
                     <div className="flex items-center gap-4">
                         <div className="bg-blue-600 p-3 rounded-2xl text-white shadow-blue-200 shadow-lg">
@@ -52,8 +54,6 @@ const ModalDetalle = ({
 
                 <div className="p-8">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-
-                        {/* Columna Izquierda: Detalles Técnicos */}
                         <div className="space-y-6">
                             <section>
                                 <h3 className="text-[11px] font-black text-slate-800 uppercase mb-4 flex items-center gap-2">
@@ -61,86 +61,95 @@ const ModalDetalle = ({
                                 </h3>
                                 <div className="space-y-3">
                                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                                        <p className="text-[9px] font-bold text-slate-400 uppercase">Sistema</p>
+                                        <p className="text-[9px] font-bold text-slate-400 uppercase">Sistema Principal</p>
                                         <p className="text-xs font-black text-slate-700">{verEvento.sistema || 'NO ESPECIFICADO'}</p>
                                     </div>
                                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                                        <p className="text-[9px] font-bold text-slate-400 uppercase">Subsistema</p>
+                                        <p className="text-[9px] font-bold text-slate-400 uppercase">Subsistema Detectado</p>
                                         <p className="text-xs font-black text-slate-700">{verEvento.subsistema || '---'}</p>
                                     </div>
                                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                                        <p className="text-[9px] font-bold text-slate-400 uppercase">Técnico Responsable</p>
+                                        <p className="text-[9px] font-bold text-slate-400 uppercase">Personal Técnico</p>
                                         <div className="flex items-center gap-2 mt-1">
-                                            <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center text-[10px] font-bold text-blue-600 text-center">
+                                            <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center text-[10px] font-bold text-white text-center">
                                                 {verEvento.tecnico?.charAt(0).toUpperCase()}
                                             </div>
-                                            <p className="text-xs font-black text-slate-700">{verEvento.tecnico || 'PENDIENTE'}</p>
+                                            <p className="text-xs font-black text-slate-700">{verEvento.tecnico || 'SIN ASIGNAR'}</p>
                                         </div>
                                     </div>
                                 </div>
                             </section>
                         </div>
 
-                        {/* Columna Central: Tiempos y Uso */}
                         <div className="space-y-6">
                             <section>
                                 <h3 className="text-[11px] font-black text-slate-800 uppercase mb-4 flex items-center gap-2">
-                                    <Activity size={14} className="text-blue-500" /> Rendimiento y Horas
+                                    <Activity size={14} className="text-blue-500" /> Control de Horas
                                 </h3>
                                 <div className="grid grid-cols-2 gap-3 mb-3">
                                     <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-100">
-                                        <p className="text-[9px] font-bold text-blue-600 uppercase">Horómetro</p>
+                                        <p className="text-[9px] font-bold text-blue-600 uppercase">Horómetro Evento</p>
                                         <p className="text-lg font-black text-blue-700 font-mono">{verEvento.horometro}</p>
                                     </div>
                                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                                        <p className="text-[9px] font-bold text-slate-400 uppercase">Duración</p>
+                                        <p className="text-[9px] font-bold text-slate-400 uppercase">Tiempo Total</p>
                                         <p className="text-lg font-black text-slate-700 font-mono">{verEvento.duracion}h</p>
                                     </div>
                                 </div>
                                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-3">
                                     <div className="flex justify-between items-center text-[10px]">
-                                        <span className="text-slate-400 font-bold uppercase">Hora Inicio:</span>
+                                        <span className="text-slate-400 font-bold uppercase flex items-center gap-1"><Clock size={10} /> Inicio:</span>
                                         <span className="font-black text-slate-700">{verEvento.H_inicial || '--:--'}</span>
                                     </div>
                                     <div className="flex justify-between items-center text-[10px]">
-                                        <span className="text-slate-400 font-bold uppercase">Hora Final:</span>
+                                        <span className="text-slate-400 font-bold uppercase flex items-center gap-1"><Clock size={10} /> Término:</span>
                                         <span className="font-black text-slate-700">{verEvento.H_final || '--:--'}</span>
                                     </div>
                                     <div className="pt-2 border-t border-slate-200 flex justify-between items-center text-[10px]">
                                         <span className="text-slate-400 font-bold uppercase flex items-center gap-1"><MapPin size={10} /> Ubicación:</span>
-                                        <span className="font-black text-slate-700">{verEvento.ubic || 'PATIO CENTRAL'}</span>
+                                        <span className="font-black text-slate-700">{verEvento.ubic || 'PATIO TALLER'}</span>
                                     </div>
                                 </div>
                             </section>
                         </div>
 
-                        {/* Columna Derecha: Repuestos */}
                         <div className="space-y-6">
                             <section className="h-full flex flex-col">
                                 <h3 className="text-[11px] font-black text-slate-800 uppercase mb-4 flex items-center gap-2">
-                                    <Package size={14} className="text-blue-500" /> Repuestos Utilizados
+                                    <Package size={14} className="text-blue-500" /> Materiales y Repuestos
                                 </h3>
-                                <div className="flex-grow bg-slate-50/50 rounded-2xl border border-dashed border-slate-200 p-4 max-h-[250px] overflow-y-auto custom-scrollbar">
+                                <div className="flex-grow bg-slate-50/50 rounded-2xl border border-dashed border-slate-200 p-4 max-h-[300px] overflow-y-auto custom-scrollbar">
                                     {repuestosCargados && repuestosCargados.length > 0 ? (
-                                        <div className="space-y-2">
+                                        <div className="space-y-3">
                                             {repuestosCargados.map((r: any, i: number) => (
-                                                <div
-                                                    key={i}
-                                                    className="flex justify-between bg-white p-3 rounded-xl border border-slate-100 shadow-sm animate-in slide-in-from-right-2 duration-300"
-                                                    style={{
-                                                        animationDelay: `${i * 50}ms`,
-                                                        animationFillMode: 'both'
-                                                    }}
-                                                >
-                                                    <span className="text-[10px] font-bold text-slate-700 uppercase leading-tight">{r.descripcion}</span>
-                                                    <span className="bg-blue-600 text-white px-2 py-0.5 rounded-lg text-[10px] font-black ml-2">x{r.cantidad}</span>
+                                                <div key={i} className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm animate-in slide-in-from-right-2 duration-300">
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <span className="text-[10px] font-black text-blue-700 uppercase leading-tight flex-1">{r.descripcion_repuesto || r.descripcion}</span>
+                                                        <span className="bg-slate-900 text-white px-2 py-0.5 rounded-lg text-[10px] font-black ml-2 shadow-sm">x{r.cantidad}</span>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-slate-50">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <Hash size={10} className="text-slate-300" />
+                                                            <div>
+                                                                <p className="text-[7px] text-slate-400 font-bold uppercase leading-none">N° Parte</p>
+                                                                <p className="text-[9px] font-black text-slate-600 uppercase">{r.numero_parte || 'N/A'}</p>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-center gap-1.5">
+                                                            <Inbox size={10} className="text-slate-300" />
+                                                            <div>
+                                                                <p className="text-[7px] text-slate-400 font-bold uppercase leading-none">Almacén</p>
+                                                                <p className="text-[9px] font-black text-slate-600 uppercase">{r.codigo_almacen || 'N/A'}</p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>
                                     ) : (
                                         <div className="h-full flex flex-col items-center justify-center text-slate-300 py-10">
                                             <Package size={30} strokeWidth={1} />
-                                            <p className="text-[9px] font-bold uppercase mt-2 tracking-tighter">Sin materiales</p>
+                                            <p className="text-[9px] font-bold uppercase mt-2 tracking-tighter">Sin materiales registrados</p>
                                         </div>
                                     )}
                                 </div>
@@ -148,14 +157,16 @@ const ModalDetalle = ({
                         </div>
                     </div>
 
-                    {/* Descripción Ampliada al final */}
                     <div className="mt-8 pt-6 border-t border-slate-100">
-                        <h3 className="text-[11px] font-black text-slate-800 uppercase mb-3 tracking-widest">Relato Detallado del Evento</h3>
-                        <div className="bg-blue-50/30 p-6 rounded-[2rem] border border-blue-50 relative">
+                        <h3 className="text-[11px] font-black text-slate-800 uppercase mb-3 tracking-widest">Relato Detallado del Evento Técnico</h3>
+                        <div className="bg-slate-50 p-6 rounded-[2rem] border border-slate-100 relative group overflow-hidden">
+                            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                                <PenTool size={100} />
+                            </div>
                             <p className="text-sm text-slate-600 italic leading-relaxed whitespace-pre-wrap relative z-10">
                                 "{verEvento.evento}"
                             </p>
-                            <span className="absolute top-2 left-4 text-6xl text-blue-100 font-serif opacity-50 select-none">“</span>
+                            <span className="absolute top-2 left-4 text-6xl text-slate-200 font-serif opacity-30 select-none">“</span>
                         </div>
                     </div>
                 </div>

@@ -8,7 +8,6 @@ import { TablaEventos } from './TablaEventos';
 import ModalDetalle from './ModalDetalle';
 import { ModalFormulario } from './ModalFormulario';
 
-// ✅ MEJORADO: Obtener fecha local exacta YYYY-MM-DD sin errores de zona horaria
 const obtenerFechaLocal = () => {
     const ahora = new Date();
     const anio = ahora.getFullYear();
@@ -32,13 +31,14 @@ function HistorialFormContent() {
 
     const [repuestos, setRepuestos] = useState<any[]>([])
     const [repuestosCargados, setRepuestosCargados] = useState<any[]>([])
-    const [nuevoRepuesto, setNuevoRepuesto] = useState({ descripcion: '', cantidad: 1 })
+    const [nuevoRepuesto, setNuevoRepuesto] = useState({ descripcion: '', cantidad: 1, id: null })
 
+    // ✅ MODIFICADO: horometro como string vacío para evitar el '0' preseteado
     const initialForm = {
         fecha_evento: obtenerFechaLocal(),
         placa: '',
         ubic: '',
-        horometro: '',
+        horometro: '' as any,
         sistema: '',
         subsistema: '',
         evento: '',
@@ -66,7 +66,6 @@ function HistorialFormContent() {
             .order('fecha_evento', { ascending: false });
 
         if (!error && data) {
-            // ✅ CORRECCIÓN DEFINITIVA: Limpiamos la fecha de cualquier residuo de zona horaria (T00:00:00)
             const registrosCorregidos = data.map(reg => ({
                 ...reg,
                 fecha_evento: typeof reg.fecha_evento === 'string'
@@ -92,12 +91,26 @@ function HistorialFormContent() {
         }
     }, [searchParams]);
 
+    // ✅ MODIFICADO: Carga de repuestos desde repUsadosMtto con Join a base_repuestos
     useEffect(() => {
         if (verEvento) {
-            supabase.from('repuestos_utilizados')
-                .select('*')
-                .eq('evento_id', verEvento.id)
-                .then(({ data }) => setRepuestosCargados(data || []));
+            supabase.from('repUsadosMtto')
+                .select(`
+                    *,
+                    base_repuestos (
+                        codigo_almacen,
+                        numero_parte
+                    )
+                `)
+                .eq('eventoId', verEvento.id)
+                .then(({ data }) => {
+                    const repuestosFormateados = data?.map(r => ({
+                        ...r,
+                        codigo_almacen: r.base_repuestos?.codigo_almacen || r.codigo_almacen,
+                        numero_parte: r.base_repuestos?.numero_parte || r.numero_parte
+                    }));
+                    setRepuestosCargados(repuestosFormateados || []);
+                });
         }
     }, [verEvento]);
 
@@ -134,6 +147,7 @@ function HistorialFormContent() {
 
         const duracionFinal = Number(duracionCalculada.toFixed(2));
         const placaLimpia = form.placa.trim().toUpperCase();
+        const nuevoHorometro = Number(form.horometro);
 
         setEnviando(true);
 
@@ -142,7 +156,7 @@ function HistorialFormContent() {
                 fecha_evento: form.fecha_evento,
                 placa: placaLimpia,
                 ubic: form.ubic?.toUpperCase() || '',
-                horometro: Number(form.horometro),
+                horometro: nuevoHorometro,
                 sistema: form.sistema.trim().toUpperCase(),
                 subsistema: form.subsistema?.trim().toUpperCase() || '',
                 evento: form.evento,
@@ -158,29 +172,35 @@ function HistorialFormContent() {
             if (isEditing && evId) {
                 const { error } = await supabase.from('historial_eventos').update(dataToSave).eq('id', evId);
                 if (error) throw error;
-                await supabase.from('repuestos_utilizados').delete().eq('evento_id', evId);
+                await supabase.from('repUsadosMtto').delete().eq('eventoId', evId);
             } else {
                 const { data, error } = await supabase.from('historial_eventos').insert([dataToSave]).select().single();
                 if (error) throw error;
                 evId = data.id;
             }
 
-            if (form.tipoTrabajo !== "INSPECCION") {
+            const { data: equipoActual } = await supabase.from('maestroEquipos').select('horometroMayor').eq('placaRodaje', placaLimpia).single();
+            if (equipoActual && nuevoHorometro > (equipoActual.horometroMayor || 0)) {
                 await supabase.from('maestroEquipos').update({
-                    status: 'INOPERATIVO',
-                    obs: form.evento || ''
+                    horometroMayor: nuevoHorometro,
+                    ultima_fecha: form.fecha_evento
                 }).eq('placaRodaje', placaLimpia);
             }
 
+            // ✅ MODIFICADO: Guardado masivo en repUsadosMtto
             if (repuestos.length > 0) {
-                await supabase.from('repuestos_utilizados').insert(
-                    repuestos.map(r => ({
-                        evento_id: evId,
-                        descripcion: r.descripcion.toUpperCase(),
-                        cantidad: r.cantidad,
-                        fecha_cambio: form.fecha_evento
-                    }))
-                );
+                const repuestosData = repuestos.map(r => ({
+                    fechCambio: form.fecha_evento,
+                    placaId: placaLimpia,
+                    eventoId: evId,
+                    bdRepuestoId: r.bdRepuestoId || r.id || null,
+                    descripcion_repuesto: (r.descripcion_repuesto || r.descripcion).toUpperCase(),
+                    cantidad: Number(r.cantidad),
+                    horometro: nuevoHorometro
+                }));
+
+                const { error: errorRep } = await supabase.from('repUsadosMtto').insert(repuestosData);
+                if (errorRep) throw errorRep;
             }
 
             await fetchRegistros();
@@ -202,7 +222,7 @@ function HistorialFormContent() {
     const agregarRepuestoALista = () => {
         if (!nuevoRepuesto.descripcion.trim()) return;
         setRepuestos([...repuestos, { ...nuevoRepuesto, descripcion: nuevoRepuesto.descripcion.toUpperCase() }]);
-        setNuevoRepuesto({ descripcion: '', cantidad: 1 });
+        setNuevoRepuesto({ descripcion: '', cantidad: 1, id: null });
     }
 
     const darAltaEquipo = async () => {
@@ -228,15 +248,9 @@ function HistorialFormContent() {
 
     return (
         <div className="max-w-[1440px] mx-auto space-y-6">
-            {/* Cabecera Principal */}
             <div className="bg-white p-5 rounded-[2.5rem] border border-slate-200/60 shadow-xl shadow-slate-200/40 flex flex-col lg:flex-row items-center justify-between gap-6">
                 <div className="flex items-center gap-5 w-full lg:w-auto">
-                    <button
-                        onClick={() => router.push('/equipos')}
-                        className="p-3 bg-slate-50 rounded-2xl text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all border border-slate-100"
-                    >
-                        <ArrowLeft size={20} />
-                    </button>
+                    <button onClick={() => router.push('/equipos')} className="p-3 bg-slate-50 rounded-2xl text-slate-400 hover:text-blue-600 border border-slate-100"><ArrowLeft size={20} /></button>
                     <div>
                         <h1 className="text-xl font-black text-slate-800 uppercase tracking-tighter leading-none">Historial de Eventos</h1>
                         <div className="flex items-center gap-2 mt-1.5">
@@ -252,25 +266,12 @@ function HistorialFormContent() {
                 <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
                     <div className="relative w-full sm:w-80 group">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-500 transition-colors" size={18} />
-                        <input
-                            type="text"
-                            placeholder="Buscar placa, sistema o técnico..."
-                            value={busqueda}
-                            onChange={(e) => setBusqueda(e.target.value)}
-                            className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-100 rounded-2xl text-xs font-bold outline-none focus:ring-4 focus:ring-blue-500/5 focus:bg-white transition-all shadow-inner"
-                        />
+                        <input type="text" placeholder="Buscar placa, sistema o técnico..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-100 rounded-2xl text-xs font-bold outline-none focus:ring-4 focus:ring-blue-500/5 focus:bg-white transition-all shadow-inner" />
                     </div>
-
-                    <button
-                        onClick={() => { setForm(initialForm); setIsEditing(false); setRepuestos([]); setEspecificarSistema(false); setShowModal(true); }}
-                        className="w-full sm:w-auto px-8 py-3.5 bg-blue-600 text-white rounded-2xl font-black text-[11px] uppercase tracking-[0.15em] hover:bg-blue-700 hover:shadow-blue-200 hover:-translate-y-0.5 transition-all shadow-lg shadow-blue-100 flex items-center justify-center gap-3"
-                    >
-                        <Wrench size={16} /> NUEVO REGISTRO
-                    </button>
+                    <button onClick={() => { setForm(initialForm); setIsEditing(false); setRepuestos([]); setEspecificarSistema(false); setShowModal(true); }} className="w-full sm:w-auto px-8 py-3.5 bg-blue-600 text-white rounded-2xl font-black text-[11px] uppercase tracking-[0.15em] hover:bg-blue-700 transition-all shadow-lg flex items-center justify-center gap-3"><Wrench size={16} /> NUEVO REGISTRO</button>
                 </div>
             </div>
 
-            {/* Panel de Indicadores */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 {[
                     { label: 'Eventos Totales', val: stats.total, icon: <Calendar size={22} />, color: 'text-blue-600', bg: 'bg-blue-50' },
@@ -278,9 +279,7 @@ function HistorialFormContent() {
                     { label: 'Registros Hoy', val: stats.hoy, icon: <CheckCircle2 size={22} />, color: 'text-green-600', bg: 'bg-green-50' }
                 ].map((item, i) => (
                     <div key={i} className="bg-white p-6 rounded-[2rem] border border-slate-200/50 shadow-sm flex items-center gap-5 hover:border-blue-200 transition-colors group">
-                        <div className={`p-4 ${item.bg} ${item.color} rounded-2xl group-hover:scale-110 transition-transform`}>
-                            {item.icon}
-                        </div>
+                        <div className={`p-4 ${item.bg} ${item.color} rounded-2xl group-hover:scale-110 transition-transform`}>{item.icon}</div>
                         <div>
                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{item.label}</p>
                             <p className="text-2xl font-black text-slate-800">{item.val}</p>
@@ -289,7 +288,6 @@ function HistorialFormContent() {
                 ))}
             </div>
 
-            {/* Tabla */}
             <div className="bg-white rounded-[2.5rem] border border-slate-200/60 shadow-xl shadow-slate-200/30 overflow-hidden">
                 <div className="px-8 py-5 border-b border-slate-50 flex items-center justify-between bg-slate-50/30">
                     <div className="flex items-center gap-2">
@@ -302,32 +300,8 @@ function HistorialFormContent() {
                 </div>
             </div>
 
-            {/* Modales */}
-            <ModalDetalle
-                verEvento={verEvento}
-                setVerEvento={setVerEvento}
-                darAltaEquipo={darAltaEquipo}
-                prepararEdicion={prepararEdicion}
-                eliminarRegistro={eliminarRegistro}
-                repuestosCargados={repuestosCargados}
-            />
-
-            <ModalFormulario
-                showModal={showModal}
-                setShowModal={setShowModal}
-                isEditing={isEditing}
-                form={form}
-                setForm={setForm}
-                especificarSistema={especificarSistema}
-                setEspecificarSistema={setEspecificarSistema}
-                nuevoRepuesto={nuevoRepuesto}
-                setNuevoRepuesto={setNuevoRepuesto}
-                agregarRepuestoALista={agregarRepuestoALista}
-                repuestos={repuestos}
-                setRepuestos={setRepuestos}
-                guardarEvento={guardarEvento}
-                enviando={enviando}
-            />
+            <ModalDetalle verEvento={verEvento} setVerEvento={setVerEvento} darAltaEquipo={darAltaEquipo} prepararEdicion={prepararEdicion} eliminarRegistro={eliminarRegistro} repuestosCargados={repuestosCargados} />
+            <ModalFormulario showModal={showModal} setShowModal={setShowModal} isEditing={isEditing} form={form} setForm={setForm} especificarSistema={especificarSistema} setEspecificarSistema={setEspecificarSistema} nuevoRepuesto={nuevoRepuesto} setNuevoRepuesto={setNuevoRepuesto} agregarRepuestoALista={agregarRepuestoALista} repuestos={repuestos} setRepuestos={setRepuestos} guardarEvento={guardarEvento} enviando={enviando} />
         </div>
     )
 }
@@ -335,15 +309,7 @@ function HistorialFormContent() {
 export default function HistorialEventosPage() {
     return (
         <main className="min-h-screen bg-[#F8FAFC] p-4 md:p-10 font-sans">
-            <Suspense fallback={
-                <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6">
-                    <div className="relative">
-                        <div className="h-16 w-16 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"></div>
-                        <Activity className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-blue-600" size={24} />
-                    </div>
-                    <p className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] animate-pulse">Sincronizando Historial...</p>
-                </div>
-            }>
+            <Suspense fallback={<div className="flex flex-col items-center justify-center min-h-[60vh] gap-6"><Activity className="animate-spin text-blue-600" size={48} /><p className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] animate-pulse">Sincronizando Historial...</p></div>}>
                 <HistorialFormContent />
             </Suspense>
         </main>
