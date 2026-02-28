@@ -1,14 +1,14 @@
 "use client"
-import React, { useEffect, useState, Suspense, useRef, useCallback } from 'react' // ✅ React agregado para Fragment
+import React, { useEffect, useState, Suspense, useRef, useCallback, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 import {
   Calendar, ChevronLeft, LayoutDashboard, AlertTriangle, ChevronDown, ChevronUp,
-  CheckCircle2, RefreshCcw, Clock, Settings, Plus, X, Trash2, Search, Gauge, Upload, Download, Truck, Save, Wrench, Info
+  CheckCircle2, RefreshCcw, Clock, Settings, Plus, X, Trash2, Search, Gauge, Upload, Download, Truck, Save, Wrench, Info,
+  Lock, Unlock
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
-// ✅ FUNCIÓN PARA OBTENER FECHA LOCAL REAL
 const obtenerFechaHoyLocal = () => {
   const ahora = new Date();
   const anio = ahora.getFullYear();
@@ -17,7 +17,6 @@ const obtenerFechaHoyLocal = () => {
   return `${anio}-${mes}-${dia}`;
 };
 
-// --- INTERFACES ---
 interface MaestroEquipo {
   placaRodaje: string;
   codigoEquipo: string | null;
@@ -47,20 +46,31 @@ function RendimientoContent() {
   const [isDetalleEventoOpen, setIsDetalleEventoOpen] = useState(false)
 
   const [mesSeleccionado, setMesSeleccionado] = useState(obtenerFechaHoyLocal().slice(0, 7))
-  const [filtroPlaca, setFiltroPlaca] = useState('')
+  const [filtroGeneral, setFiltroGeneral] = useState('')
+
+  const [fechaPrefijada, setFechaPrefijada] = useState(obtenerFechaHoyLocal())
+  const [usarFechaPrefijada, setUsarFechaPrefijada] = useState(false)
 
   const [busquedaPlaca, setBusquedaPlaca] = useState('')
   const [sugerencias, setSugerencias] = useState<MaestroEquipo[]>([])
 
-  const initialFormState = {
+  const fechaCalculada = useMemo(() => {
+    return usarFechaPrefijada ? fechaPrefijada : obtenerFechaHoyLocal();
+  }, [usarFechaPrefijada, fechaPrefijada]);
+
+  const [formData, setFormData] = useState({
     fecha: obtenerFechaHoyLocal(),
     placa_rodaje: '',
     horometro_inicial: '' as any,
     horometro_final: '' as any,
     inspeccion: 0, manto_prev: 0, manto_prog: 0, manto_ctvo: 0, repara_acc: 0, stand_by: 0, n_fallas: 0, descripcion: ''
-  }
+  })
 
-  const [formData, setFormData] = useState(initialFormState)
+  useEffect(() => {
+    if (isModalOpen && !isEditing) {
+      setFormData(prev => ({ ...prev, fecha: fechaCalculada }));
+    }
+  }, [isModalOpen, isEditing, fechaCalculada]);
 
   const fetchEventosDetalle = async () => {
     const { data: res } = await supabase.from('historial_eventos').select('*');
@@ -76,7 +86,11 @@ function RendimientoContent() {
         .lt('fecha', month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, '0')}-01`)
         .order('fecha', { ascending: true });
 
-      if (filtroPlaca) query = query.ilike('placa_rodaje', `%${filtroPlaca}%`);
+      if (filtroGeneral) {
+        // ✅ FILTRO SUPERIOR ELÁSTICO (Busca en Placa o Código)
+        query = query.or(`placa_rodaje.ilike.%${filtroGeneral}%,codigo_equipo.ilike.%${filtroGeneral}%`);
+      }
+
       const { data: res, error } = await query;
       if (error) throw error;
       setData(res || []);
@@ -85,16 +99,10 @@ function RendimientoContent() {
     finally { setLoading(false) }
   }
 
-  useEffect(() => { fetchRendimiento() }, [mesSeleccionado, filtroPlaca])
+  useEffect(() => { fetchRendimiento() }, [mesSeleccionado, filtroGeneral])
 
-  const toggleRow = (id: string) => {
-    setExpandedRow(expandedRow === id ? null : id);
-  }
-
-  const abrirModalDetalle = (ev: any) => {
-    setEventoSeleccionado(ev);
-    setIsDetalleEventoOpen(true);
-  }
+  const toggleRow = (id: string) => { setExpandedRow(expandedRow === id ? null : id); }
+  const abrirModalDetalle = (ev: any) => { setEventoSeleccionado(ev); setIsDetalleEventoOpen(true); }
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -145,7 +153,14 @@ function RendimientoContent() {
 
   const closeAndReset = () => {
     setIsModalOpen(false); setIsEditing(false); setSelectedId(null);
-    setFormData(initialFormState); setBusquedaPlaca(''); setSugerencias([]);
+    setFormData({
+      fecha: fechaCalculada,
+      placa_rodaje: '',
+      horometro_inicial: '' as any,
+      horometro_final: '' as any,
+      inspeccion: 0, manto_prev: 0, manto_prog: 0, manto_ctvo: 0, repara_acc: 0, stand_by: 0, n_fallas: 0, descripcion: ''
+    });
+    setBusquedaPlaca(''); setSugerencias([]);
   }
 
   const handleGuardar = async (e: React.FormEvent) => {
@@ -167,19 +182,21 @@ function RendimientoContent() {
     } catch (err: any) { alert(err.message) }
   }
 
-  const handleEliminar = async () => {
-    if (!selectedId || !confirm("¿Eliminar este registro de horómetro?")) return;
-    try {
-      const { error } = await supabase.from('reporte_diario').delete().eq('id', selectedId);
-      if (error) throw error;
-      closeAndReset(); fetchRendimiento();
-    } catch (err: any) { alert(err.message) }
-  }
-
+  // ✅ BUSCADOR PREDICTIVO ELÁSTICO: Busca por código o placa ignorando formatos
   const buscarPlacas = useCallback(async (termino: string) => {
     if (!termino) { setSugerencias([]); return; }
+
+    // Creamos variaciones del término: original, sin espacios, y sin guiones
+    const tOriginal = termino.toUpperCase();
+    const tLimpio = termino.replace(/[\s-]/g, '').toUpperCase();
+
     try {
-      const { data: res, error } = await supabase.from('maestroEquipos').select('placaRodaje, codigoEquipo').or(`placaRodaje.ilike.%${termino}%,codigoEquipo.ilike.%${termino}%`).limit(6);
+      const { data: res, error } = await supabase
+        .from('maestroEquipos')
+        .select('placaRodaje, codigoEquipo')
+        // Buscamos el original o la versión limpia en AMBAS columnas
+        .or(`placaRodaje.ilike.%${tOriginal}%,codigoEquipo.ilike.%${tOriginal}%,placaRodaje.ilike.%${tLimpio}%,codigoEquipo.ilike.%${tLimpio}%`)
+        .limit(10);
       if (!error && res) setSugerencias(res);
     } catch (e) { console.error(e) }
   }, []);
@@ -202,36 +219,59 @@ function RendimientoContent() {
   return (
     <main className="min-h-screen bg-[#F8FAFC] p-4 md:p-8 text-slate-900 font-sans">
       <div className="max-w-[1600px] mx-auto space-y-6">
+
         {/* HEADER */}
-        <div className="flex flex-col lg:flex-row justify-between items-center gap-6 bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200">
+        <div className="flex flex-col lg:flex-row justify-between items-center gap-6 bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-200">
           <div className="flex items-center gap-4">
             <button onClick={() => router.push('/equipos')} className="p-3 hover:bg-slate-100 rounded-xl text-slate-400 transition-colors"><ChevronLeft /></button>
             <h1 className="text-xl font-black uppercase tracking-tight text-slate-800">Rendimiento Operativo</h1>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+
+          <div className="flex flex-wrap items-center gap-4 bg-slate-50 p-2 rounded-2xl border border-slate-100">
+            <div className="flex items-center gap-2 px-3 border-r border-slate-200">
+              <button
+                onClick={() => setUsarFechaPrefijada(!usarFechaPrefijada)}
+                className={`p-2 rounded-lg transition-all ${usarFechaPrefijada ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-200 text-slate-400 hover:bg-slate-300'}`}
+              >
+                {usarFechaPrefijada ? <Lock size={14} /> : <Unlock size={14} />}
+              </button>
+              <div className="flex flex-col">
+                <span className="text-[8px] font-black text-slate-400 uppercase leading-none mb-1">Pre-fijar Fecha</span>
+                <input
+                  type="date"
+                  value={fechaPrefijada}
+                  onChange={(e) => setFechaPrefijada(e.target.value)}
+                  className={`bg-transparent text-[10px] font-black uppercase outline-none ${!usarFechaPrefijada && 'opacity-20'}`}
+                  disabled={!usarFechaPrefijada}
+                />
+              </div>
+            </div>
+
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input type="text" placeholder="BUSCAR PLACA..." value={filtroPlaca || ''} onChange={(e) => setFiltroPlaca(e.target.value.toUpperCase())}
-                className="pl-10 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold focus:ring-2 ring-blue-500 outline-none w-44" />
+              <input type="text" placeholder="BUSCAR PLACA O CÓDIGO..." value={filtroGeneral} onChange={(e) => setFiltroGeneral(e.target.value.toUpperCase())}
+                className="pl-10 pr-4 py-3 bg-white border border-slate-100 rounded-xl text-xs font-bold focus:ring-2 ring-blue-50 outline-none w-44" />
             </div>
-            <input type="month" value={mesSeleccionado || ''} onChange={(e) => setMesSeleccionado(e.target.value)} className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold outline-none cursor-pointer" />
-            <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx, .xls" onChange={handleFileUpload} />
-            <button onClick={() => fileInputRef.current?.click()} title="Excel" className="p-3 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-xl hover:bg-emerald-600 hover:text-white transition-all shadow-sm"><Upload size={20} /></button>
-            <button onClick={() => { setIsEditing(false); setFormData(initialFormState); setIsModalOpen(true); }} className="bg-slate-900 text-white px-6 py-3 rounded-xl flex items-center gap-2 text-xs font-bold uppercase tracking-widest active:scale-95 transition-all"><Plus size={18} /> Nuevo Registro</button>
+            <input type="month" value={mesSeleccionado || ''} onChange={(e) => setMesSeleccionado(e.target.value)} className="p-3 bg-white border border-slate-100 rounded-xl text-xs font-bold outline-none cursor-pointer" />
+            <div className="flex gap-2">
+              <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx, .xls" onChange={handleFileUpload} />
+              <button onClick={() => fileInputRef.current?.click()} className="p-3 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-xl hover:bg-emerald-600 hover:text-white transition-all"><Upload size={18} /></button>
+              <button onClick={() => { setIsEditing(false); setIsModalOpen(true); }} className="bg-slate-900 text-white px-6 py-3 rounded-xl flex items-center gap-2 text-xs font-black uppercase tracking-widest active:scale-95 shadow-lg"><Plus size={18} /> Nuevo</button>
+            </div>
           </div>
         </div>
 
         {/* KPIs */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <DataCard label="TPEF (Hrs)" val={tpef} icon={<Clock />} color="text-blue-600" bg="bg-blue-50" />
           <DataCard label="TPPR (Hrs)" val={tppr} icon={<AlertTriangle />} color="text-rose-600" bg="bg-rose-50" />
-          <DataCard label="DISP. MEC (%)" val={dmValue} icon={<Settings />} color="text-emerald-600" bg="bg-emerald-50" border="border-b-4 border-b-emerald-500" />
-          <DataCard label="UTIL (%)" val={utilValue} icon={<Gauge />} color="text-indigo-600" bg="bg-indigo-50" border="border-b-4 border-b-indigo-500" />
+          <DataCard label="DISP. MEC (%)" val={dmValue} icon={<Settings />} color="text-emerald-600" bg="bg-emerald-50" />
+          <DataCard label="UTIL (%)" val={utilValue} icon={<Gauge />} color="text-indigo-600" bg="bg-indigo-50" />
           <DataCard label="FALLAS" val={totalFallas} icon={<LayoutDashboard />} color="text-amber-600" bg="bg-amber-50" />
           <DataCard label="HRS OPER" val={totalHorasTrabajo.toFixed(2)} icon={<CheckCircle2 />} color="text-slate-600" bg="bg-slate-50" />
         </div>
 
-        {/* TABLA CON ACORDEÓN */}
+        {/* TABLA CON ACORDEÓN COMPLETO */}
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-[11px]">
@@ -239,18 +279,18 @@ function RendimientoContent() {
                 <tr className="bg-slate-900 text-white uppercase font-black tracking-wider text-center">
                   <th className="px-4 py-4 text-left">HIST.</th>
                   <th className="px-4 py-4 text-left">FECHA</th>
-                  <th className="px-4 py-4 text-left">UNIDAD</th>
+                  <th className="px-4 py-4 text-left">UNIDAD / CÓDIGO</th>
                   <th className="px-4 py-4">H. INI</th>
                   <th className="px-4 py-4">H. FIN</th>
-                  <th className="px-4 py-4 bg-blue-800">HRS TRAB</th>
+                  <th className="px-4 py-4 bg-blue-800 text-white">HRS TRAB</th>
                   <th className="px-2 py-4">INSP</th>
                   <th className="px-2 py-4">PREV</th>
                   <th className="px-2 py-4">PROG</th>
                   <th className="px-2 py-4 text-rose-300">CTVO</th>
                   <th className="px-2 py-4">ACC</th>
                   <th className="px-2 py-4">S.BY</th>
-                  <th className="px-4 py-4 bg-emerald-800">D.M.%</th>
-                  <th className="px-4 py-4 bg-indigo-800">% UTIL</th>
+                  <th className="px-4 py-4 bg-emerald-800 text-white">D.M.%</th>
+                  <th className="px-4 py-4 bg-indigo-800 text-white">% UTIL</th>
                   <th className="px-4 py-4">OPC</th>
                 </tr>
               </thead>
@@ -264,9 +304,14 @@ function RendimientoContent() {
                       <tr onClick={() => toggleRow(item.id)} className={`cursor-pointer transition-colors ${esExpandido ? 'bg-blue-50/20' : 'hover:bg-slate-50'}`}>
                         <td className="px-4 py-3 text-center">{relacionados.length > 0 ? (esExpandido ? <ChevronUp size={16} /> : <ChevronDown size={16} />) : null}</td>
                         <td className="px-4 py-3 whitespace-nowrap">{item.fecha}</td>
-                        <td className="px-4 py-3"><span className="bg-slate-100 px-2 py-1 rounded text-slate-900 border border-slate-200 uppercase">{item.placa_rodaje}</span></td>
-                        <td className="px-4 py-3 text-center">{item.horometro_inicial}</td>
-                        <td className="px-4 py-3 text-center">{item.horometro_final}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-col leading-none">
+                            <span className="text-slate-900 font-black mb-1 uppercase tracking-tighter">{item.placa_rodaje}</span>
+                            <span className="text-[9px] text-slate-400 font-black uppercase">{item.codigo_equipo || '---'}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-center font-mono">{item.horometro_inicial}</td>
+                        <td className="px-4 py-3 text-center font-mono">{item.horometro_final}</td>
                         <td className="px-4 py-3 text-center bg-blue-50 text-blue-700 font-black">{Number(item.horas_trabajo).toFixed(2)}</td>
                         <td className="px-2 py-3 text-center">{item.inspeccion}</td>
                         <td className="px-2 py-3 text-center">{item.manto_prev}</td>
@@ -276,29 +321,22 @@ function RendimientoContent() {
                         <td className="px-2 py-3 text-center">{item.stand_by}</td>
                         <td className="px-4 py-3 text-center text-emerald-600 font-black">{item.dm_porcentaje}%</td>
                         <td className="px-4 py-3 text-center text-indigo-600 font-black">{item.util_porcentaje}%</td>
-                        <td className="px-4 py-3 text-center"><button onClick={(e) => handleEdit(item, e)} className="p-2 text-slate-400 hover:text-blue-600"><Settings size={14} /></button></td>
+                        <td className="px-4 py-3 text-center"><button onClick={(e) => handleEdit(item, e)} className="p-2 text-slate-400 hover:text-blue-600 transition-colors"><Settings size={14} /></button></td>
                       </tr>
 
-                      {/* ✅ ACORDEÓN CON ALINEACIÓN PRECISA BAJO COLUMNAS */}
                       {esExpandido && (
                         <tr className="bg-slate-50/50">
                           <td colSpan={15} className="p-0 border-l-4 border-l-blue-600 shadow-inner">
                             <div className="px-6 py-2 space-y-1">
                               {relacionados.map((ev, i) => (
                                 <div key={i} onClick={() => abrirModalDetalle(ev)} className="flex items-center text-[10px] bg-white border border-slate-200 rounded-lg p-2 shadow-sm hover:border-blue-400 cursor-pointer group">
-                                  {/* Tipo de Trabajo - Calza bajo HIST/FECHA */}
                                   <div className="w-[18%] font-black text-blue-600 uppercase flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>{ev.tipoTrabajo}</div>
-
-                                  {/* Sistema y Evento - Calza bajo UNIDAD/H.INI/H.FIN */}
                                   <div className="flex-grow font-bold text-slate-600 uppercase truncate pr-4">[{ev.sistema}] {ev.evento}</div>
-
-                                  {/* ✅ BLOQUE DE DURACIONES: Calza bajo INSP, PREV, PROG, CTVO, ACC */}
                                   <div className="flex w-[26%] justify-around items-center font-black">
                                     <div className={`w-8 text-center ${ev.tipoTrabajo === 'INSPECCION' ? 'text-blue-600 bg-blue-50 rounded' : 'text-slate-200'}`}>{ev.tipoTrabajo === 'INSPECCION' ? ev.duracion : '-'}</div>
                                     <div className={`w-8 text-center ${ev.tipoTrabajo === 'MTTO. PREV' ? 'text-blue-600 bg-blue-50 rounded' : 'text-slate-200'}`}>{ev.tipoTrabajo === 'MTTO. PREV' ? ev.duracion : '-'}</div>
                                     <div className={`w-8 text-center ${ev.tipoTrabajo === 'MTTO. PROG' ? 'text-blue-600 bg-blue-50 rounded' : 'text-slate-100'}`}>{ev.tipoTrabajo === 'MTTO. PROG' ? ev.duracion : '-'}</div>
                                     <div className={`w-8 text-center ${ev.tipoTrabajo === 'MTTO. CORRECTIVO' ? 'text-rose-600 bg-rose-50 rounded' : 'text-slate-100'}`}>{ev.tipoTrabajo === 'MTTO. CORRECTIVO' ? ev.duracion : '-'}</div>
-                                    <div className={`w-8 text-center ${ev.tipoTrabajo === 'ACCIDENTE' ? 'text-rose-600 bg-rose-50 rounded' : 'text-slate-100'}`}>{ev.tipoTrabajo === 'ACCIDENTE' ? ev.duracion : '-'}</div>
                                   </div>
                                   <div className="w-[4%] flex justify-end"><Info size={14} className="text-slate-300 group-hover:text-blue-500" /></div>
                                 </div>
@@ -315,7 +353,7 @@ function RendimientoContent() {
           </div>
         </div>
 
-        {/* ✅ MODAL DE INFORMACIÓN TÉCNICA RICA */}
+        {/* MODAL DETALLE EVENTO RESTAURADO */}
         {isDetalleEventoOpen && eventoSeleccionado && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
             <div className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl border border-slate-100 overflow-hidden">
@@ -343,7 +381,7 @@ function RendimientoContent() {
                     </div>
                   </div>
                   <div>
-                    <p className="text-[9px] font-black text-slate-400 uppercase ml-2 mb-1">Relato Técnico del Evento</p>
+                    <p className="text-[9px] font-black text-slate-400 uppercase ml-2 mb-1 text-blue-600">Relato Técnico del Evento</p>
                     <div className="p-5 bg-blue-50/30 rounded-2xl text-xs text-slate-600 italic leading-relaxed border border-blue-50">"{eventoSeleccionado.evento}"</div>
                   </div>
                 </div>
@@ -362,7 +400,7 @@ function RendimientoContent() {
           </div>
         )}
 
-        {/* MODAL DE EDICIÓN - PRESERVADO */}
+        {/* MODAL NUEVO / EDITAR */}
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
             <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col">
@@ -375,11 +413,10 @@ function RendimientoContent() {
                   <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest leading-none">Unidad</label>
                   <div className="relative group">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-500 transition-colors" size={18} />
-                    {/* ✅ FIX BUSCADOR: Al escribir llama a setBusquedaPlaca para activar el buscador predictivo */}
                     <input
                       required
                       type="text"
-                      placeholder="Filtrar placa..."
+                      placeholder="Escribe placa o código..."
                       value={busquedaPlaca || ''}
                       onChange={(e) => {
                         const val = e.target.value.toUpperCase();
@@ -393,7 +430,11 @@ function RendimientoContent() {
                     <div className="absolute top-full left-0 right-0 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[70] mt-2 overflow-hidden animate-in fade-in zoom-in-95">
                       {sugerencias.map((eq) => (
                         <div key={eq.placaRodaje} onClick={() => handleSelectEquipo(eq)} className="p-4 hover:bg-blue-50 cursor-pointer flex justify-between items-center border-b last:border-0 border-slate-100 transition-colors group">
-                          <span className="font-black text-xs text-slate-700 group-hover:text-blue-600">{eq.placaRodaje}</span><span className="text-[9px] bg-slate-100 px-2 py-1 rounded-md font-bold text-slate-400 uppercase tracking-tighter">{eq.codigoEquipo || 'S/C'}</span>
+                          <div className="flex flex-col">
+                            <span className="font-black text-xs text-slate-700 group-hover:text-blue-600 uppercase">{eq.placaRodaje}</span>
+                            <span className="text-[8px] font-bold text-slate-400 uppercase">{eq.codigoEquipo || 'S/C'}</span>
+                          </div>
+                          <CheckCircle2 size={14} className="text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity" />
                         </div>
                       ))}
                     </div>
@@ -401,7 +442,13 @@ function RendimientoContent() {
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest leading-none">Fecha</label>
-                  <input required type="date" value={formData.fecha || ''} onChange={(e) => setFormData({ ...formData, fecha: e.target.value })} className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-2xl font-bold text-sm outline-none shadow-inner" />
+                  <input
+                    required
+                    type="date"
+                    value={formData.fecha || ''}
+                    onChange={(e) => setFormData({ ...formData, fecha: e.target.value })}
+                    className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-2xl font-bold text-sm outline-none shadow-inner"
+                  />
                 </div>
                 <div className="grid grid-cols-2 gap-4 bg-blue-50/50 p-5 rounded-[2rem] border border-blue-100 shadow-inner">
                   <div className="space-y-1 text-center">

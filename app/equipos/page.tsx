@@ -6,8 +6,17 @@ import {
   Truck, Settings, MapPin, Search,
   Activity, AlertTriangle, Gauge, LogOut,
   ChevronDown, Info, ClipboardList, X, Check, Save, Calendar, Eye, Clock, Wrench, ShieldCheck,
-  Database, PackageSearch // Importado para el nuevo botón de gestión
+  Database, PackageSearch, BarChart3, Construction
 } from 'lucide-react'
+
+// ✅ FUNCIÓN PARA OBTENER FECHA LOCAL REAL (Evita que salga 28/02 si es 27/02)
+const obtenerFechaHoyLocal = () => {
+  const ahora = new Date();
+  const anio = ahora.getFullYear();
+  const mes = String(ahora.getMonth() + 1).padStart(2, '0');
+  const dia = String(ahora.getDate()).padStart(2, '0');
+  return `${anio}-${mes}-${dia}`;
+};
 
 // --- INTERFAZ COMPLETA ---
 interface Equipo {
@@ -48,7 +57,7 @@ export default function MaestroEquiposPage() {
   const [form, setForm] = useState({
     inicio: '',
     final: '',
-    fecha: new Date().toISOString().split('T')[0]
+    fecha: obtenerFechaHoyLocal() // ✅ Corregido para usar fecha local real
   })
   const [enviando, setEnviando] = useState(false)
 
@@ -111,7 +120,7 @@ export default function MaestroEquiposPage() {
     setForm({
       inicio: equipo.horometroMayor?.toString() || '0',
       final: '',
-      fecha: new Date().toISOString().split('T')[0]
+      fecha: obtenerFechaHoyLocal() // ✅ Corregido aquí también
     })
     setShowModal(true)
   }
@@ -175,12 +184,20 @@ export default function MaestroEquiposPage() {
     setAbierto(abierto === placa ? null : placa)
   }
 
-  // --- LÓGICA DE BÚSQUEDA COMPLETA (RESTAURADA) ---
+  // --- ✅ LÓGICA DE BÚSQUEDA ROBUSTA (Normalización de caracteres corregida) ---
   const filtrados = equipos.filter(e => {
-    const q = busqueda.toLowerCase()
+    const q = busqueda.toLowerCase().trim()
+
+    // Función que elimina guiones, espacios y puntos para comparar
+    const normalizar = (texto: string) => texto.replace(/[\s\.\-]/g, '').toLowerCase()
+
+    const queryNormalizada = normalizar(q)
+    const placaNormalizada = normalizar(e.placaRodaje || "")
+    const codigoNormalizado = normalizar(e.codigoEquipo || "")
+
     return (
-      (e.placaRodaje?.toLowerCase() || "").includes(q) ||
-      (e.codigoEquipo?.toLowerCase() || "").includes(q) ||
+      placaNormalizada.includes(queryNormalizada) ||
+      codigoNormalizado.includes(queryNormalizada) ||
       (e.marca?.toLowerCase() || "").includes(q) ||
       (e.modelo?.toLowerCase() || "").includes(q) ||
       (e.status?.toLowerCase() || "").includes(q) ||
@@ -196,156 +213,145 @@ export default function MaestroEquiposPage() {
   )
 
   return (
-    <main className="min-h-screen bg-[#F8FAFC] p-6 md:p-12 font-sans text-slate-900 relative">
-      <div className="max-w-7xl mx-auto space-y-8">
+    <main className="min-h-screen bg-[#F8FAFC] p-4 md:p-8 font-sans text-slate-900">
+      <div className="max-w-[1600px] mx-auto space-y-6">
 
         {/* --- HEADER --- */}
         <header className="flex flex-col xl:flex-row justify-between items-center gap-6 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
-          <div className="flex items-center gap-4">
-            <div className="bg-blue-600 p-4 rounded-3xl text-white shadow-lg shadow-blue-100"><Truck size={24} /></div>
+          <div className="flex items-center gap-5">
+            <div className="bg-blue-600 p-5 rounded-3xl text-white shadow-xl shadow-blue-100/50 flex-shrink-0">
+              <Truck size={28} />
+            </div>
             <div>
               <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-black text-slate-800 tracking-tight">Maestro de Equipos</h1>
-                <button onClick={handleLogout} className="p-2 text-slate-300 hover:text-rose-500 transition-all"><LogOut size={18} /></button>
+                <h1 className="text-3xl font-black text-slate-800 tracking-tight">Maestro de Equipos</h1>
+                <button onClick={handleLogout} className="p-2 text-slate-300 hover:text-rose-500 transition-colors">
+                  <LogOut size={20} />
+                </button>
               </div>
-              <p className="text-xs font-medium text-slate-400 italic">Gestión de Flota</p>
+              <p className="text-sm font-bold text-slate-400 uppercase tracking-wider">Gestión Centralizada de Flota</p>
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 w-full md:w-auto">
-            {/* FILA 1: BUSCADOR Y BOTONES PRINCIPALES */}
-            <div className="flex flex-col md:flex-row items-center gap-3 md:justify-end w-full">
-              <button
-                onClick={() => router.push('/bdrepuestos')}
-                className="flex items-center gap-2 px-6 py-3.5 bg-indigo-600 text-white rounded-2xl font-bold text-[11px] uppercase tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-100 active:scale-95 whitespace-nowrap"
-              >
-                <Database size={18} /> BD Repuestos
-              </button>
-
-              <button
-                onClick={() => router.push('/estatus')}
-                className="flex items-center gap-2 px-6 py-3.5 bg-emerald-600 text-white rounded-2xl font-bold text-[11px] uppercase tracking-widest hover:bg-emerald-700 shadow-lg shadow-emerald-100 active:scale-95 whitespace-nowrap"
-              >
-                <ShieldCheck size={18} /> Estatus
-              </button>
-              <button onClick={() => router.push('/rendimiento')} className="flex items-center gap-2 px-6 py-3.5 bg-blue-600 text-white rounded-2xl font-bold text-[11px] uppercase tracking-widest hover:bg-blue-700 shadow-lg shadow-blue-100 active:scale-95 whitespace-nowrap">
-                <Activity size={18} /> Rendimiento
-              </button>
-              <button onClick={() => router.push('/historial-horometro')} className="flex items-center gap-2 px-6 py-3.5 bg-slate-800 text-white rounded-2xl font-bold text-[11px] uppercase tracking-widest hover:bg-slate-700 shadow-md active:scale-95 whitespace-nowrap">
-                <ClipboardList size={18} /> Historial
-              </button>
-              <div className="relative w-full md:w-64">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
-                <input
-                  onChange={(e) => setBusqueda(e.target.value)}
-                  placeholder="Buscar placa..."
-                  className="w-full pl-12 pr-6 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-inner italic"
-                />
-              </div>
+          <div className="flex flex-col gap-4 w-full xl:w-auto">
+            <div className="flex flex-wrap items-center gap-2 justify-center xl:justify-end">
+              <NavButton onClick={() => router.push('/bdrepuestos')} color="indigo" icon={<Database size={16} />}>BD Repuestos</NavButton>
+              <NavButton onClick={() => router.push('/repuestos')} color="orange" icon={<PackageSearch size={16} />}>Gestión Almacén</NavButton>
+              <NavButton onClick={() => router.push('/estatus')} color="emerald" icon={<ShieldCheck size={16} />}>Estatus</NavButton>
+              <NavButton onClick={() => router.push('/rendimiento')} color="blue" icon={<BarChart3 size={16} />}>Rendimiento</NavButton>
+              <NavButton onClick={() => router.push('/historial-horometro')} color="slate" icon={<ClipboardList size={16} />}>Historial</NavButton>
             </div>
 
-            {/* FILA 2: NUEVO BOTÓN DE GESTIÓN DE REPUESTOS */}
-            <div className="flex flex-row items-center gap-3 md:justify-end w-full">
-              <button
-                onClick={() => router.push('/repuestos')}
-                className="flex items-center gap-2 px-8 py-3.5 bg-orange-500 text-white rounded-2xl font-bold text-[11px] uppercase tracking-widest hover:bg-orange-600 shadow-lg shadow-orange-100 active:scale-95 whitespace-nowrap w-full md:w-auto justify-center"
-              >
-                <PackageSearch size={18} /> Gestión Repuestos (Ingresos/Salidas)
-              </button>
+            <div className="relative w-full xl:max-w-md ml-auto">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input
+                onChange={(e) => setBusqueda(e.target.value)}
+                placeholder="BUSCAR PLACA (CAB-705 o CAB 705)..."
+                className="w-full pl-12 pr-6 py-4 bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-2xl text-[10px] font-black uppercase tracking-widest outline-none transition-all shadow-inner"
+              />
             </div>
           </div>
         </header>
 
-        {/* ... Resto del componente se mantiene intacto ... */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
+        {/* --- GRID DE EQUIPOS --- */}
+        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-6 items-start">
           {filtrados.map((equipo) => {
             const isExpanded = abierto === equipo.placaRodaje;
+            const isCritical = (equipo.disponibilidad ?? 100) < 85;
+            const isOperativo = equipo.status?.toLowerCase() === 'operativo';
+
             return (
-              <div key={equipo.placaRodaje} className={`bg-white rounded-[2.5rem] p-8 border transition-all duration-300 ease-in-out h-fit group ${isExpanded ? 'shadow-xl border-blue-100 scale-[1.02]' : 'shadow-sm border-slate-100'}`}>
-                <div className="flex justify-between items-start mb-6">
-                  <div className="space-y-1">
-                    <span className="text-[10px] font-bold text-blue-600 uppercase tracking-widest bg-blue-50 px-3 py-1 rounded-full">{equipo.codigoEquipo || 'SIN COD'}</span>
-                    <h2 className="text-xl font-black text-slate-800 font-mono uppercase tracking-tighter">{equipo.placaRodaje}</h2>
-                    <p className="text-[11px] font-bold text-slate-400 italic">{equipo.descripcionEquipo}</p>
+              <div key={equipo.placaRodaje} className={`bg-white rounded-[2.5rem] overflow-hidden border transition-all duration-300 ${isExpanded ? 'shadow-2xl border-blue-200 ring-4 ring-blue-50' : 'shadow-sm border-slate-100 hover:border-blue-200'}`}>
+                <div className="p-8">
+                  <div className="flex justify-between items-start mb-6">
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] bg-blue-50 px-3 py-1 rounded-lg">
+                        {equipo.codigoEquipo || 'SIN COD'}
+                      </span>
+                      <h2 className="text-2xl font-black text-slate-800 font-mono tracking-tighter uppercase">{equipo.placaRodaje}</h2>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={(e) => abrirModal(e, equipo)} className="p-3 bg-slate-50 text-slate-400 rounded-2xl hover:bg-blue-600 hover:text-white transition-all">
+                        <Gauge size={22} />
+                      </button>
+                      <button onClick={() => toggleAcordeon(equipo.placaRodaje)} className={`p-3 rounded-2xl transition-all ${isExpanded ? 'bg-blue-600 text-white rotate-180 shadow-lg' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}>
+                        <ChevronDown size={22} />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <button onClick={(e) => abrirModal(e, equipo)} className="p-2.5 bg-blue-50 text-blue-600 rounded-2xl hover:bg-blue-600 hover:text-white transition-all shadow-sm"><Gauge size={20} /></button>
-                    <button onClick={() => toggleAcordeon(equipo.placaRodaje)} className={`p-2 rounded-2xl transition-all ${isExpanded ? 'bg-blue-600 text-white rotate-180' : 'bg-slate-50 text-slate-400 hover:text-blue-600'}`}><ChevronDown size={20} /></button>
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div className="bg-slate-50/80 p-4 rounded-3xl border border-blue-50 flex flex-col justify-between">
-                    <div>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase italic leading-none mb-1">Horómetro Act.</p>
-                      <p className="text-base font-black text-slate-700 font-mono">{equipo.horometroMayor || 0} <span className="text-[10px] text-blue-400 italic">HRS</span></p>
-                    </div>
-                    <div className="mt-2 pt-2 border-t border-slate-200/60 flex items-center gap-1.5">
-                      <Calendar size={10} className="text-blue-500" />
-                      <div className="flex flex-col">
-                        <span className="text-[8px] font-bold text-slate-400 uppercase leading-none">Actualizado:</span>
-                        <span className="text-[9px] font-black text-slate-600 font-mono">{equipo.ultima_fecha}</span>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-slate-50/80 p-5 rounded-[2rem] border border-slate-100">
+                      <div className="flex items-center gap-2 mb-2 text-slate-400">
+                        <Activity size={14} />
+                        <span className="text-[9px] font-black uppercase tracking-widest">Horómetro</span>
                       </div>
+                      <p className="text-xl font-black text-slate-700 font-mono">
+                        {equipo.horometroMayor || 0} <span className="text-xs text-blue-500 font-bold ml-1">h</span>
+                      </p>
+                      <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase italic">{equipo.ultima_fecha}</p>
                     </div>
-                  </div>
-                  <div className="bg-slate-50/50 p-4 rounded-3xl">
-                    <p className="text-[9px] font-bold text-slate-400 uppercase italic mb-1">Disponibilidad</p>
-                    <p className={`text-lg font-black ${equipo.disponibilidad! < 85 ? 'text-rose-600' : 'text-emerald-600'}`}>{equipo.disponibilidad?.toFixed(1)}%</p>
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <div className={`w-1.5 h-1.5 rounded-full ${equipo.status?.toLowerCase() === 'operativo' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                      <p className="text-[8px] font-black uppercase text-slate-500">{equipo.status}</p>
-                    </div>
-                  </div>
-                </div>
 
-                <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isExpanded ? 'max-h-[1200px] opacity-100 mt-6' : 'max-h-0 opacity-0'}`}>
-                  <div className="pt-6 border-t border-dashed border-slate-100 space-y-6">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="bg-blue-50/50 p-4 rounded-3xl border border-blue-100">
-                        <div className="flex items-center gap-2 mb-1 text-blue-600"><Clock size={14} /><span className="text-[9px] font-bold uppercase">TPEF</span></div>
-                        <p className="text-sm font-black text-slate-700">{equipo.tpef?.toFixed(1)} <span className="text-[8px] font-normal">h/falla</span></p>
+                    <div className={`p-5 rounded-[2rem] border ${isCritical ? 'bg-rose-50 border-rose-100' : 'bg-emerald-50 border-emerald-100'}`}>
+                      <div className="flex items-center gap-2 mb-2 text-slate-400">
+                        <ShieldCheck size={14} />
+                        <span className="text-[9px] font-black uppercase tracking-widest">Disponibilidad</span>
                       </div>
-                      <div className="bg-amber-50/50 p-4 rounded-3xl border border-amber-100">
-                        <div className="flex items-center gap-2 mb-1 text-amber-600"><Wrench size={14} /><span className="text-[9px] font-bold uppercase">TPPR</span></div>
-                        <p className="text-sm font-black text-slate-700">{equipo.tppr?.toFixed(1)} <span className="text-[8px] font-normal">h/rep</span></p>
+                      <p className={`text-xl font-black ${isCritical ? 'text-rose-600' : 'text-emerald-600'}`}>
+                        {equipo.disponibilidad?.toFixed(1)}%
+                      </p>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <div className={`w-1.5 h-1.5 rounded-full ${isOperativo ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                        <span className="text-[9px] font-black uppercase text-slate-500">{equipo.status}</span>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-y-4 text-[11px]">
-                      <div><p className="font-bold text-slate-400 uppercase">Marca / Modelo</p><p className="font-semibold text-slate-700">{equipo.marca} - {equipo.modelo}</p></div>
-                      <div><p className="font-bold text-slate-400 uppercase">Año / Capacidad</p><p className="font-semibold text-slate-700">{equipo.year} / {equipo.cap}</p></div>
-                      <div><p className="font-bold text-slate-400 uppercase">Serie Motor</p><p className="font-semibold text-slate-700 font-mono">{equipo.serieMotor || '---'}</p></div>
-                      <div><p className="font-bold text-slate-400 uppercase">Propietario</p><p className="font-semibold text-slate-700">{equipo.propietario}</p></div>
-                    </div>
-                    <div className="bg-slate-50 p-4 rounded-3xl space-y-3">
-                      <div className="flex items-start gap-3 text-slate-500">
-                        <MapPin size={16} className="text-blue-500 mt-0.5" />
-                        <div><p className="text-[10px] font-bold text-slate-400 uppercase">Ubicación Actual</p><p className="text-xs font-medium">{equipo.ubic} — {equipo.proyecto}</p></div>
+                  </div>
+
+                  <div className={`transition-all duration-500 ease-in-out ${isExpanded ? 'max-h-[1000px] opacity-100 mt-6' : 'max-h-0 opacity-0 overflow-hidden'}`}>
+                    <div className="pt-6 border-t border-dashed border-slate-200 space-y-6">
+                      <div className="grid grid-cols-2 gap-3">
+                        <MetricBox label="TPEF (Horas/Falla)" value={equipo.tpef?.toFixed(1) || '0'} icon={<Clock size={14} />} color="blue" />
+                        <MetricBox label="TPPR (Horas/Mant)" value={equipo.tppr?.toFixed(1) || '0'} icon={<Wrench size={14} />} color="amber" />
                       </div>
+
+                      <div className="grid grid-cols-2 gap-y-5 text-[11px] bg-slate-50/50 p-6 rounded-[2rem]">
+                        <DataField label="Modelo" value={`${equipo.marca} — ${equipo.modelo}`} />
+                        <DataField label="Año / Capacidad" value={`${equipo.year} — ${equipo.cap}`} />
+                        <DataField label="Serie Motor" value={equipo.serieMotor || '---'} mono />
+                        <DataField label="Propietario" value={equipo.propietario} />
+                        <div className="col-span-2">
+                          <DataField label="Proyecto / Ubicación" value={`${equipo.proyecto} — ${equipo.ubic}`} icon={<MapPin size={12} className="text-blue-500" />} />
+                        </div>
+                      </div>
+
                       {equipo.obs && (
-                        <div className="flex items-start gap-3 text-slate-500 border-t border-slate-200 pt-3">
-                          <ClipboardList size={16} className="text-amber-500 mt-0.5" />
-                          <div><p className="text-[10px] font-bold text-slate-400 uppercase">Observaciones</p><p className="text-xs italic">{equipo.obs}</p></div>
+                        <div className="bg-amber-50 p-5 rounded-3xl border border-amber-100">
+                          <div className="flex items-center gap-2 mb-2 text-amber-600">
+                            <ClipboardList size={14} />
+                            <span className="text-[10px] font-black uppercase tracking-widest">Observaciones</span>
+                          </div>
+                          <p className="text-xs text-amber-800 italic leading-relaxed font-medium">"{equipo.obs}"</p>
                         </div>
                       )}
+
+                      <button onClick={() => {
+                        const params = new URLSearchParams({
+                          placa: equipo.placaRodaje,
+                          codigo: equipo.codigoEquipo || '',
+                          desc: equipo.descripcionEquipo || '',
+                          ubic: equipo.ubic || '',
+                          horo: (equipo.horometroMayor || 0).toString(),
+                          openModal: 'true'
+                        });
+                        router.push(`/eventos?${params.toString()}`);
+                      }}
+                        className="w-full py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] bg-slate-900 text-white hover:bg-blue-600 transition-all shadow-xl shadow-slate-200 flex items-center justify-center gap-3 active:scale-95"
+                      >
+                        <Construction size={16} /> Registrar Intervención
+                      </button>
                     </div>
                   </div>
                 </div>
-
-                <button onClick={() => {
-                  const params = new URLSearchParams({
-                    placa: equipo.placaRodaje,
-                    codigo: equipo.codigoEquipo || '',
-                    desc: equipo.descripcionEquipo || '',
-                    ubic: equipo.ubic || '',
-                    horo: (equipo.horometroMayor || 0).toString(),
-                    openModal: 'true'
-                  });
-                  router.push(`/eventos?${params.toString()}`);
-                }}
-                  className="w-full mt-6 py-4 rounded-3xl font-bold text-xs uppercase tracking-widest bg-slate-900 text-white hover:bg-blue-600 transition-all flex items-center justify-center gap-2 shadow-lg shadow-slate-200"
-                >
-                  <Wrench size={14} /> Registrar Evento Técnico
-                </button>
               </div>
             );
           })}
@@ -354,34 +360,81 @@ export default function MaestroEquiposPage() {
 
       {/* --- MODAL --- */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-white/70 backdrop-blur-md" onClick={() => setShowModal(false)} />
-          <div className="relative bg-white w-full max-w-sm rounded-[3rem] shadow-2xl border border-slate-100 p-10">
-            <button onClick={() => setShowModal(false)} className="absolute right-8 top-8 text-slate-300 hover:text-slate-600"><X size={24} /></button>
-            <div className="text-center mb-8">
-              <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-4"><Gauge size={32} /></div>
-              <h3 className="text-2xl font-black text-slate-800 uppercase font-mono">{equipoSel?.placaRodaje}</h3>
-              <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">Actualizar Lectura</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-md bg-slate-900/40">
+          <div className="relative bg-white w-full max-w-sm rounded-[3rem] shadow-2xl border border-slate-100 p-10 animate-in zoom-in-95 duration-200">
+            <button onClick={() => setShowModal(false)} className="absolute right-8 top-8 text-slate-300 hover:text-slate-600 transition-colors">
+              <X size={24} />
+            </button>
+            <div className="text-center mb-10">
+              <div className="w-20 h-20 bg-blue-50 text-blue-600 rounded-[2rem] flex items-center justify-center mx-auto mb-5 shadow-inner">
+                <Gauge size={38} />
+              </div>
+              <h3 className="text-3xl font-black text-slate-800 uppercase font-mono tracking-tighter">{equipoSel?.placaRodaje}</h3>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">Sincronización de Lectura</p>
             </div>
-            <div className="space-y-6">
-              <input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} className="w-full p-4 bg-slate-50 border-none rounded-2xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 transition-all" />
+            <div className="space-y-8">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Fecha de Lectura</label>
+                <input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} className="w-full p-5 bg-slate-50 border-none rounded-2xl font-black text-slate-700 outline-none focus:ring-4 ring-blue-50 transition-all text-center" />
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2 text-center">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase italic">Anterior</label>
-                  <div className="p-4 bg-slate-50 rounded-2xl font-bold text-slate-400 font-mono">{form.inicio}</div>
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black text-slate-300 uppercase tracking-widest text-center block">Anterior</label>
+                  <div className="p-5 bg-slate-50 rounded-2xl font-black text-slate-400 font-mono text-center text-lg">{form.inicio}</div>
                 </div>
-                <div className="space-y-2 text-center">
-                  <label className="text-[10px] font-bold text-blue-600 uppercase italic">Nueva</label>
-                  <input type="number" step="0.1" value={form.final} onChange={(e) => setForm({ ...form, final: e.target.value })} className="w-full p-4 bg-blue-50 border-none rounded-2xl text-center font-bold text-blue-700 outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono" />
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black text-blue-600 uppercase tracking-widest text-center block">Nueva Lectura</label>
+                  <input type="number" step="0.1" value={form.final} onChange={(e) => setForm({ ...form, final: e.target.value })} className="w-full p-5 bg-blue-50 border-none rounded-2xl text-center font-black text-blue-700 outline-none focus:ring-4 ring-blue-100 transition-all font-mono text-lg" placeholder="0.0" />
                 </div>
               </div>
-              <button onClick={guardarLectura} disabled={enviando} className="w-full bg-blue-600 text-white py-5 rounded-2xl font-black uppercase text-[11px] shadow-xl flex items-center justify-center gap-2">
-                {enviando ? <Activity className="animate-spin" size={18} /> : <><Save size={18} /> Guardar Registro</>}
+
+              <button onClick={guardarLectura} disabled={enviando} className="w-full bg-slate-900 text-white py-6 rounded-2xl font-black uppercase text-xs tracking-widest shadow-2xl shadow-slate-200 flex items-center justify-center gap-3 transition-all hover:bg-blue-600 active:scale-95 disabled:opacity-50">
+                {enviando ? <Activity className="animate-spin" size={20} /> : <><Save size={20} /> Sincronizar Horómetro</>}
               </button>
             </div>
           </div>
         </div>
       )}
     </main>
+  )
+}
+
+function NavButton({ children, onClick, color, icon }: any) {
+  const colors: any = {
+    indigo: 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-100',
+    orange: 'bg-orange-500 hover:bg-orange-600 shadow-orange-100',
+    emerald: 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-100',
+    blue: 'bg-blue-600 hover:bg-blue-700 shadow-blue-100',
+    slate: 'bg-slate-800 hover:bg-slate-900 shadow-slate-100',
+  }
+  return (
+    <button onClick={onClick} className={`flex items-center gap-2 px-5 py-3.5 ${colors[color]} text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg transition-all active:scale-95 whitespace-nowrap`}>
+      {icon} {children}
+    </button>
+  )
+}
+
+function MetricBox({ label, value, icon, color }: any) {
+  const base = color === 'blue' ? 'bg-blue-50/50 border-blue-100 text-blue-600' : 'bg-amber-50/50 border-amber-100 text-amber-600';
+  return (
+    <div className={`p-4 rounded-3xl border ${base}`}>
+      <div className="flex items-center gap-2 mb-1 opacity-70">
+        {icon} <span className="text-[9px] font-black uppercase tracking-widest">{label}</span>
+      </div>
+      <p className="text-sm font-black text-slate-700">{value} <span className="text-[8px] font-normal lowercase tracking-tight">h/mant</span></p>
+    </div>
+  )
+}
+
+function DataField({ label, value, mono, icon }: any) {
+  return (
+    <div className="space-y-1">
+      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{label}</p>
+      <div className="flex items-center gap-2">
+        {icon}
+        <p className={`text-slate-700 font-bold ${mono ? 'font-mono' : ''}`}>{value || '---'}</p>
+      </div>
+    </div>
   )
 }
