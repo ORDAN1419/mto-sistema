@@ -4,8 +4,7 @@ import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 import {
   Calendar, ChevronLeft, LayoutDashboard, AlertTriangle, ChevronDown, ChevronUp,
-  CheckCircle2, RefreshCcw, Clock, Settings, Plus, X, Trash2, Search, Gauge, Upload, Download, Truck, Save, Wrench, Info,
-  Lock, Unlock
+  CheckCircle2, RefreshCcw, Clock, Settings, Plus, X, Trash2, Search, Gauge, Truck, Save, Lock, Unlock, ClipboardList, HelpCircle, ArrowLeft
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
@@ -20,11 +19,12 @@ const obtenerFechaHoyLocal = () => {
 interface MaestroEquipo {
   placaRodaje: string;
   codigoEquipo: string | null;
+  descripcionEquipo?: string | null;
 }
 
 export default function RendimientoPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-[#F8FAFC]"><RefreshCcw className="animate-spin text-blue-600" size={48} /></div>}>
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-[#f7f9fa]"><RefreshCcw className="animate-spin text-[#0070b1]" size={48} /></div>}>
       <RendimientoContent />
     </Suspense>
   )
@@ -32,438 +32,369 @@ export default function RendimientoPage() {
 
 function RendimientoContent() {
   const router = useRouter()
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const inputPlacaConductorRef = useRef<HTMLInputElement>(null)
+  const inputBusquedaPrincipalRef = useRef<HTMLInputElement>(null)
 
+  // --- 1. ESTADOS ---
   const [data, setData] = useState<any[]>([])
-  const [eventosDetalle, setEventosDetalle] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [expandedRow, setExpandedRow] = useState<string | null>(null)
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [isEditing, setIsEditing] = useState(false)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [isConductorModalOpen, setIsConductorModalOpen] = useState(false)
+  const [isHelpModalOpen, setIsHelpModalOpen] = useState(false)
+  const [busquedaPlacaConductor, setBusquedaPlacaConductor] = useState('')
+  const [sugerenciasConductor, setSugerenciasConductor] = useState<MaestroEquipo[]>([])
+  const [indexSelConductor, setIndexSelConductor] = useState(-1)
 
-  const [eventoSeleccionado, setEventoSeleccionado] = useState<any>(null)
-  const [isDetalleEventoOpen, setIsDetalleEventoOpen] = useState(false)
+  const [formConductor, setFormConductor] = useState({
+    placaRodaje: '', codigoEquipo: '', descripcionEquipo: '', horometroInicial: '',
+    horometroFinal: '', detalleReporte: '', fechaReporte: obtenerFechaHoyLocal(), turno: 'T.D'
+  })
 
   const [mesSeleccionado, setMesSeleccionado] = useState(obtenerFechaHoyLocal().slice(0, 7))
+  const [diaSeleccionado, setDiaSeleccionado] = useState('')
   const [filtroGeneral, setFiltroGeneral] = useState('')
-
   const [fechaPrefijada, setFechaPrefijada] = useState(obtenerFechaHoyLocal())
   const [usarFechaPrefijada, setUsarFechaPrefijada] = useState(false)
 
-  const [busquedaPlaca, setBusquedaPlaca] = useState('')
-  const [sugerencias, setSugerencias] = useState<MaestroEquipo[]>([])
+  // --- 2. MEMOS Y CÁLCULOS ---
+  const fechaCalculada = useMemo(() => usarFechaPrefijada ? fechaPrefijada : obtenerFechaHoyLocal(), [usarFechaPrefijada, fechaPrefijada]);
+  const duracionConductorNum = useMemo(() => {
+    const ini = parseFloat(formConductor.horometroInicial);
+    const fin = parseFloat(formConductor.horometroFinal);
+    return (!isNaN(ini) && !isNaN(fin)) ? fin - ini : 0;
+  }, [formConductor.horometroInicial, formConductor.horometroFinal]);
+  const duracionConductorStr = useMemo(() => duracionConductorNum.toFixed(2), [duracionConductorNum]);
 
-  const fechaCalculada = useMemo(() => {
-    return usarFechaPrefijada ? fechaPrefijada : obtenerFechaHoyLocal();
-  }, [usarFechaPrefijada, fechaPrefijada]);
+  const totalHorasTrabajo = useMemo(() => data.reduce((acc, item) => acc + Number(item.horas_trabajo || 0), 0), [data]);
+  const totalFallas = useMemo(() => data.reduce((acc, item) => acc + Number(item.n_fallas || 0), 0), [data]);
+  const totalCtvo = useMemo(() => data.reduce((acc, item) => acc + Number(item.manto_ctvo || 0), 0), [data]);
+  const totalParadasManto = useMemo(() => data.reduce((acc, item) =>
+    acc + Number(item.inspeccion || 0) + Number(item.manto_prev || 0) + Number(item.manto_prog || 0) + Number(item.manto_ctvo || 0), 0), [data]);
 
-  const [formData, setFormData] = useState({
-    fecha: obtenerFechaHoyLocal(),
-    placa_rodaje: '',
-    horometro_inicial: '' as any,
-    horometro_final: '' as any,
-    inspeccion: 0, manto_prev: 0, manto_prog: 0, manto_ctvo: 0, repara_acc: 0, stand_by: 0, n_fallas: 0, descripcion: ''
-  })
-
-  useEffect(() => {
-    if (isModalOpen && !isEditing) {
-      setFormData(prev => ({ ...prev, fecha: fechaCalculada }));
-    }
-  }, [isModalOpen, isEditing, fechaCalculada]);
-
-  const fetchEventosDetalle = async () => {
-    const { data: res } = await supabase.from('historial_eventos').select('*');
-    if (res) setEventosDetalle(res);
-  }
-
-  const fetchRendimiento = async () => {
-    try {
-      setLoading(true);
-      const [year, month] = mesSeleccionado.split('-').map(Number);
-      let query = supabase.from('vista_rendimiento_acumulado').select('*')
-        .gte('fecha', `${mesSeleccionado}-01`)
-        .lt('fecha', month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, '0')}-01`)
-        .order('fecha', { ascending: true });
-
-      if (filtroGeneral) {
-        // ✅ FILTRO SUPERIOR ELÁSTICO (Busca en Placa o Código)
-        query = query.or(`placa_rodaje.ilike.%${filtroGeneral}%,codigo_equipo.ilike.%${filtroGeneral}%`);
-      }
-
-      const { data: res, error } = await query;
-      if (error) throw error;
-      setData(res || []);
-      await fetchEventosDetalle();
-    } catch (err: any) { console.error(err.message) }
-    finally { setLoading(false) }
-  }
-
-  useEffect(() => { fetchRendimiento() }, [mesSeleccionado, filtroGeneral])
-
-  const toggleRow = (id: string) => { setExpandedRow(expandedRow === id ? null : id); }
-  const abrirModalDetalle = (ev: any) => { setEventoSeleccionado(ev); setIsDetalleEventoOpen(true); }
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      try {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const rawJson: any[] = XLSX.utils.sheet_to_json(ws);
-        const jsonProcesado = rawJson.map(fila => {
-          let f = fila.FECHA || fila.fecha || fila.Date || fila.DATE;
-          if (f instanceof Date) f = f.toISOString().split('T')[0];
-          return {
-            fecha: f,
-            placa_rodaje: String(fila.PLACA || fila.placa || fila.placa_rodaje || '').toUpperCase().trim(),
-            horometro_inicial: Number(fila.INICIAL || fila.h_inicial || fila.horometro_inicial || 0),
-            horometro_final: Number(fila.FINAL || fila.h_final || fila.horometro_final || 0),
-            inspeccion: 0, manto_prev: 0, manto_prog: 0, manto_ctvo: 0, repara_acc: 0, stand_by: 0, n_fallas: 0
-          };
-        }).filter(item => item.placa_rodaje !== "" && item.fecha);
-        if (confirm(`¿Subir ${jsonProcesado.length} registros?`)) {
-          const { error } = await supabase.from('reporte_diario').insert(jsonProcesado);
-          if (error) throw error;
-          fetchRendimiento();
-        }
-      } catch (err: any) { alert(err.message); }
-      finally { if (fileInputRef.current) fileInputRef.current.value = ""; }
-    };
-    reader.readAsBinaryString(file);
-  };
-
-  const handleSelectEquipo = (equipo: MaestroEquipo) => {
-    setFormData({ ...formData, placa_rodaje: equipo.placaRodaje });
-    setBusquedaPlaca(equipo.placaRodaje);
-    setSugerencias([]);
-  }
-
-  const handleEdit = (item: any, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setFormData({ ...item });
-    setBusquedaPlaca(item.placa_rodaje || '');
-    setSelectedId(item.id);
-    setIsEditing(true);
-    setIsModalOpen(true);
-  }
-
-  const closeAndReset = () => {
-    setIsModalOpen(false); setIsEditing(false); setSelectedId(null);
-    setFormData({
-      fecha: fechaCalculada,
-      placa_rodaje: '',
-      horometro_inicial: '' as any,
-      horometro_final: '' as any,
-      inspeccion: 0, manto_prev: 0, manto_prog: 0, manto_ctvo: 0, repara_acc: 0, stand_by: 0, n_fallas: 0, descripcion: ''
-    });
-    setBusquedaPlaca(''); setSugerencias([]);
-  }
-
-  const handleGuardar = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const payload = {
-        ...formData,
-        horometro_inicial: parseFloat(formData.horometro_inicial) || 0,
-        horometro_final: parseFloat(formData.horometro_final) || 0
-      };
-      if (isEditing && selectedId) {
-        const { error } = await supabase.from('reporte_diario').update(payload).eq('id', selectedId);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from('reporte_diario').insert([payload]);
-        if (error) throw error;
-      }
-      closeAndReset(); fetchRendimiento();
-    } catch (err: any) { alert(err.message) }
-  }
-
-  // ✅ BUSCADOR PREDICTIVO ELÁSTICO: Busca por código o placa ignorando formatos
-  const buscarPlacas = useCallback(async (termino: string) => {
-    if (!termino) { setSugerencias([]); return; }
-
-    // Creamos variaciones del término: original, sin espacios, y sin guiones
-    const tOriginal = termino.toUpperCase();
-    const tLimpio = termino.replace(/[\s-]/g, '').toUpperCase();
-
-    try {
-      const { data: res, error } = await supabase
-        .from('maestroEquipos')
-        .select('placaRodaje, codigoEquipo')
-        // Buscamos el original o la versión limpia en AMBAS columnas
-        .or(`placaRodaje.ilike.%${tOriginal}%,codigoEquipo.ilike.%${tOriginal}%,placaRodaje.ilike.%${tLimpio}%,codigoEquipo.ilike.%${tLimpio}%`)
-        .limit(10);
-      if (!error && res) setSugerencias(res);
-    } catch (e) { console.error(e) }
-  }, []);
-
-  useEffect(() => {
-    const timer = setTimeout(() => buscarPlacas(busquedaPlaca), 200);
-    return () => clearTimeout(timer);
-  }, [busquedaPlaca, buscarPlacas]);
-
-  const totalHorasTrabajo = data.reduce((acc, item) => acc + Number(item.horas_trabajo || 0), 0);
-  const totalFallas = data.reduce((acc, item) => acc + Number(item.n_fallas || 0), 0);
-  const totalCtvo = data.reduce((acc, item) => acc + Number(item.manto_ctvo || 0), 0);
-  const totalParadasManto = data.reduce((acc, item) => acc + Number(item.inspeccion) + Number(item.manto_prev) + Number(item.manto_prog) + Number(item.manto_ctvo), 0);
   const horasTotalesPeriodo = data.length * 24;
   const tpef = totalFallas > 0 ? (totalHorasTrabajo / totalFallas).toFixed(2) : "0.00";
   const tppr = totalFallas > 0 ? (totalCtvo / totalFallas).toFixed(2) : "0.00";
   const dmValue = horasTotalesPeriodo > 0 ? (((horasTotalesPeriodo - totalParadasManto) / horasTotalesPeriodo) * 100).toFixed(2) : "0.00";
   const utilValue = (horasTotalesPeriodo - totalParadasManto) > 0 ? ((totalHorasTrabajo / (horasTotalesPeriodo - totalParadasManto)) * 100).toFixed(2) : "0.00";
 
+  // --- 3. FUNCIONES LÓGICA ---
+  const fetchRendimiento = useCallback(async (silencioso = false) => {
+    try {
+      if (!silencioso) setLoading(true);
+      const [year, month] = mesSeleccionado.split('-').map(Number);
+      let query = supabase.from('vista_rendimiento_acumulado').select('*');
+      if (diaSeleccionado) { query = query.eq('fecha', diaSeleccionado); }
+      else { query = query.gte('fecha', `${mesSeleccionado}-01`).lt('fecha', month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, '0')}-01`); }
+      if (filtroGeneral) {
+        const tLimpio = filtroGeneral.toUpperCase().replace(/[\s-]/g, '');
+        query = query.or(`placa_rodaje.ilike.%${filtroGeneral}%,codigo_equipo.ilike.%${filtroGeneral}%,placa_rodaje.ilike.%${tLimpio}%,codigo_equipo.ilike.%${tLimpio}%`);
+      }
+      const { data: res, error } = await query.order('fecha', { ascending: true });
+      if (error) throw error;
+      setData(res || []);
+    } catch (err: any) { console.error(err.message) }
+    finally { setLoading(false) }
+  }, [mesSeleccionado, diaSeleccionado, filtroGeneral]);
+
+  const handleSelectConductor = useCallback((eq: MaestroEquipo) => {
+    setFormConductor(prev => ({ ...prev, placaRodaje: eq.placaRodaje, codigoEquipo: eq.codigoEquipo || '', descripcionEquipo: eq.descripcionEquipo || '' }));
+    setBusquedaPlacaConductor(eq.placaRodaje);
+    setSugerenciasConductor([]);
+    setIndexSelConductor(-1);
+  }, []);
+
+  const handleGuardarConductor = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (duracionConductorNum > 24) return;
+    try {
+      const { error } = await supabase.from('reportesConductor').insert([{
+        ...formConductor,
+        horometroInicial: parseFloat(formConductor.horometroInicial),
+        horometroFinal: parseFloat(formConductor.horometroFinal)
+      }]);
+      if (error) throw error;
+      setFormConductor({ placaRodaje: '', codigoEquipo: '', descripcionEquipo: '', horometroInicial: '', horometroFinal: '', detalleReporte: '', fechaReporte: fechaCalculada, turno: 'T.D' });
+      setBusquedaPlacaConductor('');
+      setIsConductorModalOpen(false);
+      fetchRendimiento(true);
+      alert("✅ Transacción registrada.");
+    } catch (err: any) { alert(err.message) }
+  };
+
+  // --- 4. EFECTOS ---
+  useEffect(() => { fetchRendimiento() }, [fetchRendimiento]);
+
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      if (!busquedaPlacaConductor) { setSugerenciasConductor([]); return; }
+      const t = busquedaPlacaConductor.replace(/[\s-]/g, '').toUpperCase();
+      const { data } = await supabase.from('maestroEquipos').select('placaRodaje, codigoEquipo, descripcionEquipo').or(`placaRodaje.ilike.%${t}%,codigoEquipo.ilike.%${t}%`).limit(5);
+      if (data) setSugerenciasConductor(data);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [busquedaPlacaConductor]);
+
+  useEffect(() => {
+    if (isConductorModalOpen) {
+      setTimeout(() => inputPlacaConductorRef.current?.focus(), 100);
+    }
+  }, [isConductorModalOpen]);
+
+  useEffect(() => {
+    setFormConductor(prev => ({ ...prev, fechaReporte: fechaCalculada }));
+  }, [fechaCalculada]);
+
+  // --- 5. ATAJOS ---
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === '1') { e.preventDefault(); router.push('/historial-horometro'); }
+      if (e.ctrlKey && e.key === '2') { e.preventDefault(); router.push('/bdrepuestos'); }
+      if (e.ctrlKey && e.key === '3') { e.preventDefault(); router.push('/estatus'); }
+      if (e.ctrlKey && e.key === '4') { e.preventDefault(); router.push('/repuestos'); }
+
+      if (e.altKey && e.key === '1') { e.preventDefault(); setIsConductorModalOpen(p => !p); }
+      if (e.altKey && e.key === '2') { if (isConductorModalOpen) { e.preventDefault(); document.getElementById('btnGuardarConductor')?.click(); } }
+      if (e.altKey && e.key.toLowerCase() === 'q') { e.preventDefault(); fetchRendimiento(true); }
+      if (e.altKey && e.key.toLowerCase() === 's') { e.preventDefault(); inputBusquedaPrincipalRef.current?.focus(); }
+
+      // ✅ ALT + X CORREGIDO: Solo limpia filtros, no los datos cargados.
+      if (e.altKey && e.key.toLowerCase() === 'x') {
+        e.preventDefault();
+        setFiltroGeneral('');
+        setDiaSeleccionado('');
+        setMesSeleccionado(obtenerFechaHoyLocal().slice(0, 7));
+      }
+
+      if (e.altKey && e.key.toLowerCase() === 'h') { e.preventDefault(); setIsHelpModalOpen(p => !p); }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isConductorModalOpen, fechaCalculada, fetchRendimiento, router]);
+
+  const toggleRow = (id: string) => setExpandedRow(expandedRow === id ? null : id);
+
   return (
-    <main className="min-h-screen bg-[#F8FAFC] p-4 md:p-8 text-slate-900 font-sans">
-      <div className="max-w-[1600px] mx-auto space-y-6">
+    <main className="min-h-screen bg-[#f7f9fa] text-[#32363a] font-sans">
 
-        {/* HEADER */}
-        <div className="flex flex-col lg:flex-row justify-between items-center gap-6 bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-200">
-          <div className="flex items-center gap-4">
-            <button onClick={() => router.push('/equipos')} className="p-3 hover:bg-slate-100 rounded-xl text-slate-400 transition-colors"><ChevronLeft /></button>
-            <h1 className="text-xl font-black uppercase tracking-tight text-slate-800">Rendimiento Operativo</h1>
+      {/* SAP SHELL BAR */}
+      <nav className="bg-[#354a5f] h-12 flex items-center px-4 justify-between shadow-md sticky top-0 z-50">
+        <div className="flex items-center gap-4 text-white">
+          <ArrowLeft size={18} onClick={() => router.back()} className="cursor-pointer hover:opacity-70" />
+          <div className="h-6 w-px bg-white/20" />
+          <span className="font-bold text-xs tracking-wider uppercase italic leading-none">Rendimiento Operativo | SAP S/4HANA</span>
+        </div>
+        <div className="flex items-center gap-4">
+          <HelpCircle size={20} className="text-white opacity-80 cursor-pointer hover:opacity-100" onClick={() => setIsHelpModalOpen(true)} />
+          <div className="w-8 h-8 rounded bg-white/10 flex items-center justify-center font-bold text-white text-[10px] border border-white/20 uppercase">AD</div>
+        </div>
+      </nav>
+
+      <div className="p-4 space-y-4">
+
+        {/* SAP FILTER BAR */}
+        <div className="bg-white border border-[#d3d7d9] p-4 flex flex-col md:flex-row items-end gap-6 shadow-sm rounded-sm">
+          <div className="flex items-center gap-3 border-r border-[#d3d7d9] pr-6">
+            <button onClick={() => setUsarFechaPrefijada(!usarFechaPrefijada)} className={`p-2.5 rounded-sm border transition-all ${usarFechaPrefijada ? 'bg-[#0070b1] text-white border-[#005a8e]' : 'bg-white text-slate-400 border-[#d3d7d9]'}`}>
+              {usarFechaPrefijada ? <Lock size={16} /> : <Unlock size={16} />}
+            </button>
+            <div className="flex flex-col text-left leading-none">
+              <span className="text-[10px] font-bold text-[#6a6d70] uppercase mb-1">Pre-fijar Fecha</span>
+              <input type="date" value={fechaPrefijada} onChange={(e) => setFechaPrefijada(e.target.value)} className={`bg-transparent text-xs font-black outline-none border-b border-transparent focus:border-[#0070b1] ${!usarFechaPrefijada && 'opacity-30 pointer-events-none'}`} disabled={!usarFechaPrefijada} />
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-4 bg-slate-50 p-2 rounded-2xl border border-slate-100">
-            <div className="flex items-center gap-2 px-3 border-r border-slate-200">
-              <button
-                onClick={() => setUsarFechaPrefijada(!usarFechaPrefijada)}
-                className={`p-2 rounded-lg transition-all ${usarFechaPrefijada ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-200 text-slate-400 hover:bg-slate-300'}`}
-              >
-                {usarFechaPrefijada ? <Lock size={14} /> : <Unlock size={14} />}
-              </button>
-              <div className="flex flex-col">
-                <span className="text-[8px] font-black text-slate-400 uppercase leading-none mb-1">Pre-fijar Fecha</span>
-                <input
-                  type="date"
-                  value={fechaPrefijada}
-                  onChange={(e) => setFechaPrefijada(e.target.value)}
-                  className={`bg-transparent text-[10px] font-black uppercase outline-none ${!usarFechaPrefijada && 'opacity-20'}`}
-                  disabled={!usarFechaPrefijada}
-                />
-              </div>
-            </div>
-
+          <div className="flex-grow flex flex-col gap-2 w-full text-left">
+            <label className="text-[11px] font-bold text-[#6a6d70] uppercase leading-none">Búsqueda Global</label>
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input type="text" placeholder="BUSCAR PLACA O CÓDIGO..." value={filtroGeneral} onChange={(e) => setFiltroGeneral(e.target.value.toUpperCase())}
-                className="pl-10 pr-4 py-3 bg-white border border-slate-100 rounded-xl text-xs font-bold focus:ring-2 ring-blue-50 outline-none w-44" />
-            </div>
-            <input type="month" value={mesSeleccionado || ''} onChange={(e) => setMesSeleccionado(e.target.value)} className="p-3 bg-white border border-slate-100 rounded-xl text-xs font-bold outline-none cursor-pointer" />
-            <div className="flex gap-2">
-              <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx, .xls" onChange={handleFileUpload} />
-              <button onClick={() => fileInputRef.current?.click()} className="p-3 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-xl hover:bg-emerald-600 hover:text-white transition-all"><Upload size={18} /></button>
-              <button onClick={() => { setIsEditing(false); setIsModalOpen(true); }} className="bg-slate-900 text-white px-6 py-3 rounded-xl flex items-center gap-2 text-xs font-black uppercase tracking-widest active:scale-95 shadow-lg"><Plus size={18} /> Nuevo</button>
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#0070b1]" size={16} />
+              <input
+                ref={inputBusquedaPrincipalRef}
+                value={filtroGeneral}
+                onChange={(e) => setFiltroGeneral(e.target.value.toUpperCase())}
+                placeholder="Filtrar por Placa o Código [ALT+S]..."
+                className="w-full border-b border-[#b0b3b5] focus:border-[#0070b1] outline-none pl-10 py-1.5 text-sm transition-all bg-transparent"
+              />
             </div>
           </div>
+
+          <div className="flex gap-4">
+            <div className="flex flex-col gap-1 text-left leading-none">
+              <span className="text-[10px] font-bold text-[#6a6d70] uppercase">MES</span>
+              <input type="month" value={mesSeleccionado} onChange={(e) => setMesSeleccionado(e.target.value)} className="border border-[#b0b3b5] p-1 text-xs rounded-sm outline-none focus:border-[#0070b1] bg-white font-bold" />
+            </div>
+            <div className="flex flex-col gap-1 text-left leading-none">
+              <span className="text-[10px] font-bold text-[#6a6d70] uppercase">DÍA</span>
+              <input type="date" value={diaSeleccionado} onChange={(e) => setDiaSeleccionado(e.target.value)} className="border border-[#b0b3b5] p-1 text-xs rounded-sm outline-none focus:border-[#0070b1] bg-white font-bold" />
+            </div>
+          </div>
+
+          <button onClick={() => setIsConductorModalOpen(true)} className="bg-[#0070b1] text-white px-5 py-2.5 rounded-sm text-xs font-bold uppercase shadow-sm hover:bg-[#005a8e] transition-all flex items-center gap-2 active:scale-95">
+            <ClipboardList size={16} /> Checklist Diario [ALT+1]
+          </button>
         </div>
 
         {/* KPIs */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          <DataCard label="TPEF (Hrs)" val={tpef} icon={<Clock />} color="text-blue-600" bg="bg-blue-50" />
-          <DataCard label="TPPR (Hrs)" val={tppr} icon={<AlertTriangle />} color="text-rose-600" bg="bg-rose-50" />
-          <DataCard label="DISP. MEC (%)" val={dmValue} icon={<Settings />} color="text-emerald-600" bg="bg-emerald-50" />
-          <DataCard label="UTIL (%)" val={utilValue} icon={<Gauge />} color="text-indigo-600" bg="bg-indigo-50" />
-          <DataCard label="FALLAS" val={totalFallas} icon={<LayoutDashboard />} color="text-amber-600" bg="bg-amber-50" />
-          <DataCard label="HRS OPER" val={totalHorasTrabajo.toFixed(2)} icon={<CheckCircle2 />} color="text-slate-600" bg="bg-slate-50" />
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          <SapKpiCard label="TPEF (Hrs)" val={tpef} icon={<Clock size={16} />} color="blue" />
+          <SapKpiCard label="TPPR (Hrs)" val={tppr} icon={<AlertTriangle size={16} />} color="rose" />
+          <SapKpiCard label="DISP. MEC (%)" val={`${dmValue}%`} icon={<Settings size={16} />} color="emerald" />
+          <SapKpiCard label="UTIL (%)" val={`${utilValue}%`} icon={<Gauge size={16} />} color="indigo" />
+          <SapKpiCard label="FALLAS TOTAL" val={totalFallas} icon={<LayoutDashboard size={16} />} color="amber" />
+          <SapKpiCard label="HRS OPERATIVAS" val={totalHorasTrabajo.toFixed(2)} icon={<CheckCircle2 size={16} />} color="slate" />
         </div>
 
-        {/* TABLA CON ACORDEÓN COMPLETO */}
-        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
+        {/* TABLA PRINCIPAL */}
+        <div className="bg-white border border-[#d3d7d9] shadow-sm rounded-sm overflow-hidden text-center">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-[11px]">
+            <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="bg-slate-900 text-white uppercase font-black tracking-wider text-center">
-                  <th className="px-4 py-4 text-left">HIST.</th>
-                  <th className="px-4 py-4 text-left">FECHA</th>
-                  <th className="px-4 py-4 text-left">UNIDAD / CÓDIGO</th>
-                  <th className="px-4 py-4">H. INI</th>
-                  <th className="px-4 py-4">H. FIN</th>
-                  <th className="px-4 py-4 bg-blue-800 text-white">HRS TRAB</th>
-                  <th className="px-2 py-4">INSP</th>
-                  <th className="px-2 py-4">PREV</th>
-                  <th className="px-2 py-4">PROG</th>
-                  <th className="px-2 py-4 text-rose-300">CTVO</th>
-                  <th className="px-2 py-4">ACC</th>
-                  <th className="px-2 py-4">S.BY</th>
-                  <th className="px-4 py-4 bg-emerald-800 text-white">D.M.%</th>
-                  <th className="px-4 py-4 bg-indigo-800 text-white">% UTIL</th>
-                  <th className="px-4 py-4">OPC</th>
+                <tr className="bg-[#f2f4f5] text-[#6a6d70] border-b border-[#d3d7d9] font-bold uppercase tracking-tighter">
+                  <th className="p-3 text-center w-12 tracking-tighter">REF</th>
+                  <th className="p-3">FECHA</th>
+                  <th className="p-3">UNIDAD LOGÍSTICA</th>
+                  <th className="p-3 text-right">LECT. INICIAL</th>
+                  <th className="p-3 text-right">LECT. FINAL</th>
+                  <th className="p-3 text-center bg-[#e7f0f7] text-[#0070b1]">HRS OPER.</th>
+                  <th className="p-2 text-center">INSP</th>
+                  <th className="p-2 text-center">PREV</th>
+                  <th className="p-2 text-center">PROG</th>
+                  <th className="p-2 text-center text-rose-600">CTVO</th>
+                  <th className="p-2 text-center text-emerald-600 font-bold tracking-tighter">DISP %</th>
+                  <th className="p-2 text-center text-indigo-600 font-bold tracking-tighter">UTIL %</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 font-bold text-slate-600">
-                {data.map((item, idx) => {
-                  const esExpandido = expandedRow === item.id;
-                  const relacionados = eventosDetalle.filter(e => e.placa === item.placa_rodaje && e.fecha_evento === item.fecha);
-
-                  return (
-                    <React.Fragment key={idx}>
-                      <tr onClick={() => toggleRow(item.id)} className={`cursor-pointer transition-colors ${esExpandido ? 'bg-blue-50/20' : 'hover:bg-slate-50'}`}>
-                        <td className="px-4 py-3 text-center">{relacionados.length > 0 ? (esExpandido ? <ChevronUp size={16} /> : <ChevronDown size={16} />) : null}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">{item.fecha}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex flex-col leading-none">
-                            <span className="text-slate-900 font-black mb-1 uppercase tracking-tighter">{item.placa_rodaje}</span>
-                            <span className="text-[9px] text-slate-400 font-black uppercase">{item.codigo_equipo || '---'}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-center font-mono">{item.horometro_inicial}</td>
-                        <td className="px-4 py-3 text-center font-mono">{item.horometro_final}</td>
-                        <td className="px-4 py-3 text-center bg-blue-50 text-blue-700 font-black">{Number(item.horas_trabajo).toFixed(2)}</td>
-                        <td className="px-2 py-3 text-center">{item.inspeccion}</td>
-                        <td className="px-2 py-3 text-center">{item.manto_prev}</td>
-                        <td className="px-2 py-3 text-center">{item.manto_prog}</td>
-                        <td className="px-2 py-3 text-center text-rose-500">{item.manto_ctvo}</td>
-                        <td className="px-2 py-3 text-center">{item.repara_acc}</td>
-                        <td className="px-2 py-3 text-center">{item.stand_by}</td>
-                        <td className="px-4 py-3 text-center text-emerald-600 font-black">{item.dm_porcentaje}%</td>
-                        <td className="px-4 py-3 text-center text-indigo-600 font-black">{item.util_porcentaje}%</td>
-                        <td className="px-4 py-3 text-center"><button onClick={(e) => handleEdit(item, e)} className="p-2 text-slate-400 hover:text-blue-600 transition-colors"><Settings size={14} /></button></td>
-                      </tr>
-
-                      {esExpandido && (
-                        <tr className="bg-slate-50/50">
-                          <td colSpan={15} className="p-0 border-l-4 border-l-blue-600 shadow-inner">
-                            <div className="px-6 py-2 space-y-1">
-                              {relacionados.map((ev, i) => (
-                                <div key={i} onClick={() => abrirModalDetalle(ev)} className="flex items-center text-[10px] bg-white border border-slate-200 rounded-lg p-2 shadow-sm hover:border-blue-400 cursor-pointer group">
-                                  <div className="w-[18%] font-black text-blue-600 uppercase flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>{ev.tipoTrabajo}</div>
-                                  <div className="flex-grow font-bold text-slate-600 uppercase truncate pr-4">[{ev.sistema}] {ev.evento}</div>
-                                  <div className="flex w-[26%] justify-around items-center font-black">
-                                    <div className={`w-8 text-center ${ev.tipoTrabajo === 'INSPECCION' ? 'text-blue-600 bg-blue-50 rounded' : 'text-slate-200'}`}>{ev.tipoTrabajo === 'INSPECCION' ? ev.duracion : '-'}</div>
-                                    <div className={`w-8 text-center ${ev.tipoTrabajo === 'MTTO. PREV' ? 'text-blue-600 bg-blue-50 rounded' : 'text-slate-200'}`}>{ev.tipoTrabajo === 'MTTO. PREV' ? ev.duracion : '-'}</div>
-                                    <div className={`w-8 text-center ${ev.tipoTrabajo === 'MTTO. PROG' ? 'text-blue-600 bg-blue-50 rounded' : 'text-slate-100'}`}>{ev.tipoTrabajo === 'MTTO. PROG' ? ev.duracion : '-'}</div>
-                                    <div className={`w-8 text-center ${ev.tipoTrabajo === 'MTTO. CORRECTIVO' ? 'text-rose-600 bg-rose-50 rounded' : 'text-slate-100'}`}>{ev.tipoTrabajo === 'MTTO. CORRECTIVO' ? ev.duracion : '-'}</div>
-                                  </div>
-                                  <div className="w-[4%] flex justify-end"><Info size={14} className="text-slate-300 group-hover:text-blue-500" /></div>
-                                </div>
-                              ))}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })}
+              <tbody className="divide-y divide-[#d3d7d9]">
+                {data.map((item, idx) => (
+                  <tr key={idx} className="hover:bg-[#f2f9ff] transition-colors border-b border-[#f2f4f5]">
+                    <td className="p-2 text-center text-[#0070b1] cursor-pointer" onClick={() => setExpandedRow(expandedRow === item.id ? null : item.id)}>
+                      {expandedRow === item.id ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </td>
+                    <td className="p-3 whitespace-nowrap font-mono text-[11px] text-left">{item.fecha}</td>
+                    <td className="p-3 text-left">
+                      <div className="flex flex-col leading-tight">
+                        <span className="font-bold text-[#32363a] uppercase tracking-tighter leading-none mb-1">{item.placa_rodaje}</span>
+                        <span className="text-[10px] text-slate-400 font-bold uppercase leading-none">{item.codigo_equipo || 'ID_LOG_NULL'}</span>
+                      </div>
+                    </td>
+                    <td className="p-3 text-right font-mono text-slate-500">{item.horometro_inicial}</td>
+                    <td className="p-3 text-right font-mono text-slate-500">{item.horometro_final}</td>
+                    <td className="p-3 text-center bg-[#f2f9ff] text-[#0070b1] font-bold font-mono">{Number(item.horas_trabajo).toFixed(2)}</td>
+                    <td className="p-2 text-center text-[#6a6d70]">{item.inspeccion}</td>
+                    <td className="p-2 text-center text-[#6a6d70]">{item.manto_prev}</td>
+                    <td className="p-2 text-center text-[#6a6d70]">{item.manto_prog}</td>
+                    <td className="p-2 text-center text-rose-500 font-bold">{item.manto_ctvo}</td>
+                    <td className="p-2 text-center text-emerald-600 font-black font-mono">{item.dm_porcentaje}%</td>
+                    <td className="p-2 text-center text-indigo-600 font-black font-mono">{item.util_porcentaje}%</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
+          <div className="bg-[#f2f4f5] p-2 px-4 border-t border-[#d3d7d9] flex justify-between text-[10px] font-bold text-[#6a6d70]">
+            <span>ENTRADAS ENCONTRADAS: {data.length}</span>
+            <span className="uppercase tracking-widest italic text-right">SAP S/4HANA Public Cloud System</span>
+          </div>
         </div>
 
-        {/* MODAL DETALLE EVENTO RESTAURADO */}
-        {isDetalleEventoOpen && eventoSeleccionado && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
-            <div className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl border border-slate-100 overflow-hidden">
-              <div className="bg-slate-900 p-6 flex justify-between items-center text-white">
-                <div className="flex items-center gap-3"><Wrench size={20} className="text-blue-400" /><h2 className="font-black uppercase text-sm tracking-widest leading-none">Información Detallada</h2></div>
-                <button onClick={() => setIsDetalleEventoOpen(false)}><X size={24} /></button>
+        {/* MODAL CONDUCTOR */}
+        {isConductorModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#354a5f]/60 backdrop-blur-sm p-4 text-left leading-none">
+            <div className="bg-white w-full max-w-lg rounded-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-[#d3d7d9]">
+              <div className="bg-[#354a5f] p-4 flex justify-between items-center text-white">
+                <div className="flex items-center gap-3 leading-none text-left">
+                  <ClipboardList size={20} />
+                  <h3 className="font-bold uppercase text-xs tracking-widest leading-none text-left">Registrar Entrada Logística</h3>
+                </div>
+                <X size={24} className="cursor-pointer hover:opacity-70" onClick={() => setIsConductorModalOpen(false)} />
               </div>
-              <div className="p-8 space-y-6">
+              <form onSubmit={handleGuardarConductor} className="p-6 space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 shadow-inner">
-                    <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Unidad / Placa</p>
-                    <p className="text-sm font-black text-slate-800 tracking-tighter">{eventoSeleccionado.placa}</p>
+                  <div className="flex flex-col gap-2 relative text-left">
+                    <label className="text-[10px] font-bold text-[#6a6d70] uppercase leading-none">Unidad de Transporte (Placa)</label>
+                    <input
+                      ref={inputPlacaConductorRef}
+                      required
+                      value={busquedaPlacaConductor}
+                      onChange={(e) => { setBusquedaPlacaConductor(e.target.value.toUpperCase()); setIndexSelConductor(-1); }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'ArrowDown') { setIndexSelConductor(p => Math.min(p + 1, sugerenciasConductor.length - 1)); e.preventDefault(); }
+                        if (e.key === 'ArrowUp') { setIndexSelConductor(p => Math.max(p - 1, -1)); e.preventDefault(); }
+                        if (e.key === 'Enter' && indexSelConductor >= 0) { handleSelectConductor(sugerenciasConductor[indexSelConductor]); e.preventDefault(); }
+                      }}
+                      className="border border-[#b0b3b5] p-2 text-sm rounded-sm outline-none focus:border-[#0070b1] uppercase font-mono bg-slate-50 focus:bg-white"
+                      placeholder="Ingrese Placa..."
+                    />
+                    {sugerenciasConductor.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 bg-white border border-[#d3d7d9] shadow-xl z-[110] rounded-sm overflow-hidden text-left">
+                        {sugerenciasConductor.map((eq, i) => (
+                          <div key={i} onClick={() => handleSelectConductor(eq)} className={`p-2 cursor-pointer text-xs uppercase border-b border-[#f2f4f5] text-left ${indexSelConductor === i ? 'bg-[#0070b1] text-white' : 'hover:bg-[#f2f9ff]'}`}>
+                            <b>{eq.placaRodaje}</b> - <span className="opacity-70">{eq.codigoEquipo}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 shadow-inner">
-                    <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Horómetro Evento</p>
-                    <p className="text-sm font-black text-blue-600 font-mono">{eventoSeleccionado.horometro}</p>
+                  <div className="flex flex-col gap-2 text-left leading-none">
+                    <label className="text-[10px] font-bold text-[#6a6d70] uppercase leading-none">Turno Operativo</label>
+                    <select value={formConductor.turno} onChange={(e) => setFormConductor({ ...formConductor, turno: e.target.value })} className="border border-[#b0b3b5] p-2 text-sm rounded-sm outline-none focus:border-[#0070b1] bg-slate-50 cursor-pointer">
+                      <option value="T.D">SOLAR (T.D)</option><option value="T.N">LUNAR (T.N)</option>
+                    </select>
                   </div>
                 </div>
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-[9px] font-black text-slate-400 uppercase ml-2 mb-1">Sistema y Clasificación</p>
-                    <div className="flex gap-2">
-                      <span className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[10px] font-black uppercase">{eventoSeleccionado.tipoTrabajo}</span>
-                      <span className="px-3 py-1.5 bg-slate-100 text-slate-800 rounded-lg text-[10px] font-black uppercase border border-slate-200">{eventoSeleccionado.sistema}</span>
-                    </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-2 text-center">
+                    <label className="text-[10px] font-bold text-[#6a6d70] uppercase leading-none">Lectura Inicial</label>
+                    <input required type="number" step="any" value={formConductor.horometroInicial} onChange={(e) => setFormConductor({ ...formConductor, horometroInicial: e.target.value })} className="border border-[#b0b3b5] p-2 text-lg text-center rounded-sm font-mono font-bold outline-none focus:border-[#0070b1] bg-white shadow-inner" />
                   </div>
-                  <div>
-                    <p className="text-[9px] font-black text-slate-400 uppercase ml-2 mb-1 text-blue-600">Relato Técnico del Evento</p>
-                    <div className="p-5 bg-blue-50/30 rounded-2xl text-xs text-slate-600 italic leading-relaxed border border-blue-50">"{eventoSeleccionado.evento}"</div>
+                  <div className="flex flex-col gap-2 text-center">
+                    <label className="text-[10px] font-bold text-[#6a6d70] uppercase leading-none">Lectura Final</label>
+                    <input required type="number" step="any" value={formConductor.horometroFinal} onChange={(e) => setFormConductor({ ...formConductor, horometroFinal: e.target.value })} className="border border-[#b0b3b5] p-2 text-lg text-center rounded-sm font-mono font-bold outline-none focus:border-[#0070b1] bg-white shadow-inner" />
                   </div>
                 </div>
-                <div className="flex justify-between items-center p-4 bg-slate-900 text-white rounded-2xl shadow-xl">
-                  <div className="text-center flex-1 border-r border-slate-700">
-                    <p className="text-[8px] font-black opacity-60 uppercase mb-1 tracking-widest">Técnico Resp.</p>
-                    <p className="text-xs font-black uppercase tracking-tight">{eventoSeleccionado.tecnico}</p>
-                  </div>
-                  <div className="text-center flex-1">
-                    <p className="text-[8px] font-black opacity-60 uppercase mb-1 tracking-widest">Duración Total</p>
-                    <p className="text-xs font-black text-emerald-400">{eventoSeleccionado.duracion} Horas</p>
-                  </div>
+
+                <div className={`p-4 border rounded-sm flex justify-between items-center ${duracionConductorNum > 24 ? 'bg-[#fff4f5] border-rose-200 animate-pulse' : 'bg-[#e7f0f7] border-[#0070b1]/10'}`}>
+                  <span className="text-[10px] font-bold uppercase text-[#6a6d70] leading-none text-left">Delta Transacción:</span>
+                  <span className={`text-xl font-black font-mono leading-none ${duracionConductorNum > 24 ? 'text-rose-600' : 'text-[#0070b1]'}`}>{duracionConductorStr} Hrs</span>
                 </div>
-              </div>
+
+                <div className="flex flex-col gap-2 text-left leading-none">
+                  <label className="text-[10px] font-bold text-[#6a6d70] uppercase leading-none text-left">Notas / Comentarios</label>
+                  <textarea value={formConductor.detalleReporte} onChange={(e) => setFormConductor({ ...formConductor, detalleReporte: e.target.value.toUpperCase() })} className="border border-[#b0b3b5] p-2 text-xs h-20 rounded-sm outline-none focus:border-[#0070b1] resize-none uppercase bg-slate-50 text-left" placeholder="SIN NOVEDADES..." />
+                </div>
+
+                <div className="flex flex-col gap-2 text-left leading-none">
+                  <label className="text-[10px] font-bold text-[#6a6d70] uppercase leading-none text-left">Fecha Contable</label>
+                  <input required type="date" value={formConductor.fechaReporte} onChange={(e) => setFormConductor({ ...formConductor, fechaReporte: e.target.value })} className="border border-[#b0b3b5] p-2 text-xs rounded-sm outline-none focus:border-[#0070b1] font-bold bg-slate-50" />
+                </div>
+
+                <button id="btnGuardarConductor" type="submit" disabled={duracionConductorNum > 24} className={`w-full py-4 rounded-sm font-black uppercase text-xs tracking-widest transition-all active:scale-95 shadow-md ${duracionConductorNum > 24 ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-[#0070b1] text-white hover:bg-[#005a8e]'}`}>
+                  Sincronizar [ALT+2]
+                </button>
+              </form>
             </div>
           </div>
         )}
 
-        {/* MODAL NUEVO / EDITAR */}
-        {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-            <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col">
-              <div className="bg-slate-900 p-6 flex justify-between items-center text-white font-black uppercase text-xs tracking-widest leading-none">
-                <div className="flex items-center gap-3"><Truck size={18} className="text-blue-400" /><span>{isEditing ? 'Actualizar' : 'Nuevo Registro'}</span></div>
-                <button onClick={closeAndReset}><X size={20} /></button>
+        {/* SAP HELP MODAL */}
+        {isHelpModalOpen && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[#354a5f]/60 backdrop-blur-sm p-4 text-left leading-none">
+            <div className="bg-white w-full max-w-sm rounded-sm shadow-2xl border border-[#d3d7d9] animate-in zoom-in-95 leading-none">
+              <div className="bg-[#354a5f] p-4 flex justify-between items-center text-white text-left leading-none">
+                <span className="font-bold text-xs uppercase tracking-widest leading-none text-left">Comandos del Sistema</span>
+                <X size={20} className="cursor-pointer" onClick={() => setIsHelpModalOpen(false)} />
               </div>
-              <form onSubmit={handleGuardar} className="p-8 space-y-6">
-                <div className="space-y-1 relative">
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest leading-none">Unidad</label>
-                  <div className="relative group">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-500 transition-colors" size={18} />
-                    <input
-                      required
-                      type="text"
-                      placeholder="Escribe placa o código..."
-                      value={busquedaPlaca || ''}
-                      onChange={(e) => {
-                        const val = e.target.value.toUpperCase();
-                        setBusquedaPlaca(val);
-                        setFormData({ ...formData, placa_rodaje: val });
-                      }}
-                      className="w-full pl-12 p-4 bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-2xl font-black text-sm outline-none transition-all shadow-inner"
-                    />
-                  </div>
-                  {sugerencias.length > 0 && (
-                    <div className="absolute top-full left-0 right-0 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[70] mt-2 overflow-hidden animate-in fade-in zoom-in-95">
-                      {sugerencias.map((eq) => (
-                        <div key={eq.placaRodaje} onClick={() => handleSelectEquipo(eq)} className="p-4 hover:bg-blue-50 cursor-pointer flex justify-between items-center border-b last:border-0 border-slate-100 transition-colors group">
-                          <div className="flex flex-col">
-                            <span className="font-black text-xs text-slate-700 group-hover:text-blue-600 uppercase">{eq.placaRodaje}</span>
-                            <span className="text-[8px] font-bold text-slate-400 uppercase">{eq.codigoEquipo || 'S/C'}</span>
-                          </div>
-                          <CheckCircle2 size={14} className="text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest leading-none">Fecha</label>
-                  <input
-                    required
-                    type="date"
-                    value={formData.fecha || ''}
-                    onChange={(e) => setFormData({ ...formData, fecha: e.target.value })}
-                    className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-2xl font-bold text-sm outline-none shadow-inner"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4 bg-blue-50/50 p-5 rounded-[2rem] border border-blue-100 shadow-inner">
-                  <div className="space-y-1 text-center">
-                    <label className="text-[10px] font-black uppercase text-blue-600 mb-1 block tracking-widest leading-none">H. Inicial</label>
-                    <input required type="number" step="any" placeholder="0.00" value={formData.horometro_inicial ?? ''} onChange={(e) => setFormData({ ...formData, horometro_inicial: e.target.value })} className="w-full p-4 bg-white border-2 border-transparent focus:border-blue-500 rounded-2xl font-black text-xl text-center outline-none text-blue-700 shadow-sm transition-all" />
-                  </div>
-                  <div className="space-y-1 text-center">
-                    <label className="text-[10px] font-black uppercase text-blue-600 mb-1 block tracking-widest leading-none">H. Final</label>
-                    <input required type="number" step="any" placeholder="0.00" value={formData.horometro_final ?? ''} onChange={(e) => setFormData({ ...formData, horometro_final: e.target.value })} className="w-full p-4 bg-white border-2 border-transparent focus:border-blue-500 rounded-2xl font-black text-xl text-center outline-none text-blue-700 shadow-sm transition-all" />
-                  </div>
-                </div>
-                <div className="flex gap-4 pt-2">
-                  <button type="submit" className="w-full bg-slate-900 text-white p-5 rounded-[1.5rem] font-black uppercase text-[10px] tracking-widest hover:bg-blue-600 transition-all shadow-xl flex items-center justify-center gap-3 active:scale-[0.98]"><Save size={18} /> {isEditing ? 'Actualizar' : 'Guardar'}</button>
-                </div>
-              </form>
+              <div className="p-6 space-y-4 text-left leading-none">
+                <ShortcutRow keys="CTRL + 1" label="Horómetros" />
+                <ShortcutRow keys="CTRL + 2" label="Repuestos" />
+                <ShortcutRow keys="CTRL + 3" label="Estatus Flota" />
+                <div className="h-px bg-slate-100" />
+                <ShortcutRow keys="ALT + 1" label="Abrir Checklist" />
+                <ShortcutRow keys="ALT + S" label="Enfocar Filtro" />
+                <ShortcutRow keys="ALT + Q" label="Refrescar Servidor" />
+                <ShortcutRow keys="ALT + X" label="Borrar Filtros" />
+                <ShortcutRow keys="ALT + H" label="Menú Ayuda" />
+              </div>
             </div>
           </div>
         )}
@@ -472,14 +403,24 @@ function RendimientoContent() {
   )
 }
 
-function DataCard({ label, val, unit, icon, color, bg, border }: any) {
+function SapKpiCard({ label, val, icon, color }: any) {
+  const borderColors: any = { blue: 'border-l-4 border-l-[#0070b1]', rose: 'border-l-4 border-l-rose-500', emerald: 'border-l-4 border-l-emerald-500', indigo: 'border-l-4 border-l-indigo-500', amber: 'border-l-4 border-l-amber-500', slate: 'border-l-4 border-l-slate-400' }
   return (
-    <div className={`bg-white p-4 rounded-[1.5rem] shadow-sm border border-slate-200 flex flex-col justify-between hover:shadow-md transition-all ${border || ''}`}>
-      <div className="flex items-center gap-3 mb-2">
-        <div className={`p-2 ${bg} ${color} rounded-lg`}>{icon}</div>
-        <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest leading-none">{label}</p>
+    <div className={`bg-white p-3 border border-[#d3d7d9] rounded-sm shadow-sm flex items-center gap-3 ${borderColors[color]}`}>
+      <div className="text-[#6a6d70]">{icon}</div>
+      <div className="flex flex-col text-left leading-none">
+        <span className="text-[9px] font-bold text-[#6a6d70] uppercase tracking-tighter mb-1 leading-none text-left">{label}</span>
+        <span className="text-base font-bold text-[#32363a] font-mono leading-none text-left">{val}</span>
       </div>
-      <h3 className={`text-xl font-black ${color}`}>{val} <span className="text-[10px] text-slate-400 uppercase font-bold">{unit}</span></h3>
+    </div>
+  )
+}
+
+function ShortcutRow({ keys, label }: { keys: string, label: string }) {
+  return (
+    <div className="flex justify-between items-center text-left leading-none mb-1">
+      <span className="text-[10px] font-bold text-[#6a6d70] uppercase leading-none text-left">{label}</span>
+      <span className="bg-[#f2f4f5] text-[#354a5f] px-2 py-1 rounded-sm text-[10px] font-black font-mono border border-[#d3d7d9] leading-none">{keys}</span>
     </div>
   )
 }

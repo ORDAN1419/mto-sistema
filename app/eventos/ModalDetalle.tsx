@@ -1,6 +1,7 @@
 import {
     X, FileText, CheckCircle, Edit3, Trash2, Activity, Package,
-    Clock, Settings, MapPin, Hash, Inbox, PenTool // ✅ Importación agregada
+    Clock, Settings, MapPin, Hash, Inbox, PenTool, User, Wrench,
+    Truck, Calendar, RefreshCw // ✅ Íconos faltantes agregados
 } from 'lucide-react';
 
 const ModalDetalle = ({
@@ -15,164 +16,177 @@ const ModalDetalle = ({
     if (!verEvento) return null;
 
     return (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
-            <div className="bg-white w-full max-w-5xl rounded-[2.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 border border-slate-200">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+            {/* SAP S/4HANA Container */}
+            <div className="bg-[#f7f9fa] w-full max-w-5xl rounded-sm shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-[#d3d7d9]">
 
-                <div className="flex justify-between items-center p-6 bg-slate-50 border-b border-slate-100">
-                    <div className="flex items-center gap-4">
-                        <div className="bg-blue-600 p-3 rounded-2xl text-white shadow-blue-200 shadow-lg">
-                            <FileText size={24} />
-                        </div>
-                        <div>
-                            <div className="flex items-center gap-2">
-                                <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">{verEvento.placa}</h2>
-                                <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${verEvento.tipoTrabajo === 'MTTO. CORRECTIVO' ? 'bg-rose-100 text-rose-600' : 'bg-blue-100 text-blue-600'}`}>
-                                    {verEvento.tipoTrabajo}
-                                </span>
+                {/* SAP Dynamic Page Header */}
+                <div className="bg-white border-b border-[#d3d7d9] p-6">
+                    <div className="flex justify-between items-start">
+                        <div className="flex gap-5">
+                            {/* Avatar del objeto técnico */}
+                            <div className="bg-[#eff4f9] w-16 h-16 rounded-sm border border-[#b0b3b5] flex items-center justify-center text-[#0070b1]">
+                                <Truck size={32} />
                             </div>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest italic flex items-center gap-1">
-                                <Clock size={10} /> Registrado el {new Date(verEvento.fecha_evento).toLocaleDateString()}
-                            </p>
+                            <div className="space-y-1">
+                                <div className="flex items-center gap-3">
+                                    <h2 className="text-2xl font-light text-[#32363a] uppercase tracking-tight">
+                                        {verEvento.placa}
+                                    </h2>
+                                    <span className={`px-2 py-0.5 rounded-sm text-[10px] font-bold border ${verEvento.tipoTrabajo === 'MTTO. CORRECTIVO'
+                                        ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                        : 'bg-[#e7f0f7] text-[#0070b1] border-[#b0ccf0]'
+                                        }`}>
+                                        {verEvento.tipoTrabajo}
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-4 text-[#6a6d70] text-[11px] font-medium uppercase tracking-wider">
+                                    <span className="flex items-center gap-1.5 text-left"><Calendar size={12} /> {new Date(verEvento.fecha_evento).toLocaleDateString()}</span>
+                                    <span className="w-px h-3 bg-[#d3d7d9]"></span>
+                                    <span className="flex items-center gap-1.5 text-left"><Clock size={12} /> ID LOG: {verEvento.id?.slice(0, 8)}</span>
+                                </div>
+                            </div>
                         </div>
-                    </div>
 
-                    <div className="flex items-center gap-3">
-                        <button
-                            onClick={darAltaEquipo}
-                            disabled={actualizandoEstatus}
-                            className="flex items-center gap-2 px-5 py-2.5 bg-emerald-500 text-white rounded-xl font-black text-[10px] uppercase hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-100 disabled:opacity-50"
-                        >
-                            {actualizandoEstatus ? <Activity size={14} className="animate-spin" /> : <CheckCircle size={14} />}
-                            Dar de Alta
-                        </button>
-                        <div className="h-8 w-[1px] bg-slate-200 mx-2" />
-                        <button onClick={prepararEdicion} className="p-2.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all" title="Editar"><Edit3 size={20} /></button>
-                        <button onClick={() => eliminarRegistro(verEvento.id)} className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all" title="Eliminar"><Trash2 size={20} /></button>
-                        <button onClick={() => setVerEvento(null)} className="p-2.5 text-slate-400 hover:text-slate-800 transition-all"><X size={26} /></button>
+                        {/* SAP Action Bar */}
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={darAltaEquipo}
+                                disabled={actualizandoEstatus}
+                                className="flex items-center gap-2 px-4 py-2 bg-[#0854a0] hover:bg-[#0a6ed1] text-white rounded-sm font-bold text-xs uppercase transition-all shadow-sm disabled:opacity-50"
+                            >
+                                {actualizandoEstatus ? <RefreshCw size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                                Finalizar Intervención
+                            </button>
+                            <div className="h-8 w-[1px] bg-[#d3d7d9] mx-2" />
+                            <button onClick={prepararEdicion} className="p-2 text-[#0070b1] hover:bg-[#eff4f9] rounded-sm transition-all border border-transparent hover:border-[#b0ccf0]" title="Editar"><Edit3 size={18} /></button>
+                            <button onClick={() => eliminarRegistro(verEvento.id)} className="p-2 text-rose-600 hover:bg-rose-50 rounded-sm transition-all" title="Eliminar"><Trash2 size={18} /></button>
+                            <button onClick={() => setVerEvento(null)} className="ml-2 p-2 text-[#32363a] hover:bg-[#f2f2f2] rounded-sm transition-all"><X size={22} /></button>
+                        </div>
                     </div>
                 </div>
 
-                <div className="p-8">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                {/* SAP Content Area */}
+                <div className="p-0 overflow-y-auto max-h-[75vh]">
+
+                    {/* Header Facets */}
+                    <div className="grid grid-cols-4 border-b border-[#d3d7d9] bg-white">
+                        <FacetItem label="Lectura Horómetro" value={`${verEvento.horometro} h`} icon={<Activity size={14} />} color="text-[#0070b1]" />
+                        <FacetItem label="Duración Real" value={`${verEvento.duracion} h`} icon={<Clock size={14} />} />
+                        <FacetItem label="Técnico a Cargo" value={verEvento.tecnico || 'N/A'} icon={<User size={14} />} />
+                        <FacetItem label="Emplazamiento" value={verEvento.ubic || 'PATIO'} icon={<MapPin size={14} />} />
+                    </div>
+
+                    <div className="p-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
+
                         <div className="space-y-6">
                             <section>
-                                <h3 className="text-[11px] font-black text-slate-800 uppercase mb-4 flex items-center gap-2">
-                                    <Settings size={14} className="text-blue-500" /> Componentes
-                                </h3>
-                                <div className="space-y-3">
-                                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                                        <p className="text-[9px] font-bold text-slate-400 uppercase">Sistema Principal</p>
-                                        <p className="text-xs font-black text-slate-700">{verEvento.sistema || 'NO ESPECIFICADO'}</p>
-                                    </div>
-                                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                                        <p className="text-[9px] font-bold text-slate-400 uppercase">Subsistema Detectado</p>
-                                        <p className="text-xs font-black text-slate-700">{verEvento.subsistema || '---'}</p>
-                                    </div>
-                                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                                        <p className="text-[9px] font-bold text-slate-400 uppercase">Personal Técnico</p>
-                                        <div className="flex items-center gap-2 mt-1">
-                                            <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center text-[10px] font-bold text-white text-center">
-                                                {verEvento.tecnico?.charAt(0).toUpperCase()}
+                                <h3 className="text-[12px] font-bold text-[#6a6d70] uppercase mb-4 border-b border-[#d3d7d9] pb-2 text-left leading-none">Estructura Técnica</h3>
+                                <div className="space-y-4">
+                                    <SapDataField label="Sistema / Conjunto" value={verEvento.sistema} icon={<Settings />} />
+                                    <SapDataField label="Subsistema / Nodo" value={verEvento.subsistema} icon={<Wrench />} />
+                                    <div className="pt-4 text-left">
+                                        <label className="text-[11px] font-bold text-[#6a6d70] uppercase block mb-2 leading-none">Ventana de Tiempo</label>
+                                        <div className="flex gap-4">
+                                            <div className="flex-1 bg-white border border-[#d3d7d9] p-2 rounded-sm text-center">
+                                                <span className="text-[9px] text-slate-400 block uppercase font-bold leading-none mb-1">Inicio</span>
+                                                <span className="text-xs font-mono font-bold text-slate-700 leading-none">{verEvento.H_inicial || '--:--'}</span>
                                             </div>
-                                            <p className="text-xs font-black text-slate-700">{verEvento.tecnico || 'SIN ASIGNAR'}</p>
+                                            <div className="flex-1 bg-white border border-[#d3d7d9] p-2 rounded-sm text-center">
+                                                <span className="text-[9px] text-slate-400 block uppercase font-bold leading-none mb-1">Término</span>
+                                                <span className="text-xs font-mono font-bold text-slate-700 leading-none">{verEvento.H_final || '--:--'}</span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
                             </section>
                         </div>
 
-                        <div className="space-y-6">
+                        <div className="lg:col-span-2 space-y-6">
                             <section>
-                                <h3 className="text-[11px] font-black text-slate-800 uppercase mb-4 flex items-center gap-2">
-                                    <Activity size={14} className="text-blue-500" /> Control de Horas
+                                <h3 className="text-[12px] font-bold text-[#6a6d70] uppercase mb-4 border-b border-[#d3d7d9] pb-2 flex justify-between items-center leading-none">
+                                    <span>Lista de Materiales y Repuestos</span>
+                                    <span className="text-[10px] bg-[#eff4f9] text-[#0070b1] px-2 py-0.5 rounded-full border border-[#b0ccf0]">Items: {repuestosCargados?.length || 0}</span>
                                 </h3>
-                                <div className="grid grid-cols-2 gap-3 mb-3">
-                                    <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-100">
-                                        <p className="text-[9px] font-bold text-blue-600 uppercase">Horómetro Evento</p>
-                                        <p className="text-lg font-black text-blue-700 font-mono">{verEvento.horometro}</p>
-                                    </div>
-                                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                                        <p className="text-[9px] font-bold text-slate-400 uppercase">Tiempo Total</p>
-                                        <p className="text-lg font-black text-slate-700 font-mono">{verEvento.duracion}h</p>
-                                    </div>
-                                </div>
-                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-3">
-                                    <div className="flex justify-between items-center text-[10px]">
-                                        <span className="text-slate-400 font-bold uppercase flex items-center gap-1"><Clock size={10} /> Inicio:</span>
-                                        <span className="font-black text-slate-700">{verEvento.H_inicial || '--:--'}</span>
-                                    </div>
-                                    <div className="flex justify-between items-center text-[10px]">
-                                        <span className="text-slate-400 font-bold uppercase flex items-center gap-1"><Clock size={10} /> Término:</span>
-                                        <span className="font-black text-slate-700">{verEvento.H_final || '--:--'}</span>
-                                    </div>
-                                    <div className="pt-2 border-t border-slate-200 flex justify-between items-center text-[10px]">
-                                        <span className="text-slate-400 font-bold uppercase flex items-center gap-1"><MapPin size={10} /> Ubicación:</span>
-                                        <span className="font-black text-slate-700">{verEvento.ubic || 'PATIO TALLER'}</span>
-                                    </div>
-                                </div>
-                            </section>
-                        </div>
 
-                        <div className="space-y-6">
-                            <section className="h-full flex flex-col">
-                                <h3 className="text-[11px] font-black text-slate-800 uppercase mb-4 flex items-center gap-2">
-                                    <Package size={14} className="text-blue-500" /> Materiales y Repuestos
-                                </h3>
-                                <div className="flex-grow bg-slate-50/50 rounded-2xl border border-dashed border-slate-200 p-4 max-h-[300px] overflow-y-auto custom-scrollbar">
+                                <div className="bg-white border border-[#d3d7d9] min-h-[150px]">
                                     {repuestosCargados && repuestosCargados.length > 0 ? (
-                                        <div className="space-y-3">
-                                            {repuestosCargados.map((r: any, i: number) => (
-                                                <div key={i} className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm animate-in slide-in-from-right-2 duration-300">
-                                                    <div className="flex justify-between items-start mb-2">
-                                                        <span className="text-[10px] font-black text-blue-700 uppercase leading-tight flex-1">{r.descripcion_repuesto || r.descripcion}</span>
-                                                        <span className="bg-slate-900 text-white px-2 py-0.5 rounded-lg text-[10px] font-black ml-2 shadow-sm">x{r.cantidad}</span>
-                                                    </div>
-                                                    <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-slate-50">
-                                                        <div className="flex items-center gap-1.5">
-                                                            <Hash size={10} className="text-slate-300" />
-                                                            <div>
-                                                                <p className="text-[7px] text-slate-400 font-bold uppercase leading-none">N° Parte</p>
-                                                                <p className="text-[9px] font-black text-slate-600 uppercase">{r.numero_parte || 'N/A'}</p>
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex items-center gap-1.5">
-                                                            <Inbox size={10} className="text-slate-300" />
-                                                            <div>
-                                                                <p className="text-[7px] text-slate-400 font-bold uppercase leading-none">Almacén</p>
-                                                                <p className="text-[9px] font-black text-slate-600 uppercase">{r.codigo_almacen || 'N/A'}</p>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
+                                        <table className="w-full text-left text-xs border-collapse">
+                                            <thead className="bg-[#f2f4f5] text-[#6a6d70] border-b border-[#d3d7d9] font-bold uppercase text-[10px]">
+                                                <tr>
+                                                    <th className="p-3 text-left">Descripción Material</th>
+                                                    <th className="p-3 text-left">N° Parte</th>
+                                                    <th className="p-3 text-left">Almacén</th>
+                                                    <th className="p-3 text-right">Cant.</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-[#ebeef0]">
+                                                {repuestosCargados.map((r: any, i: number) => (
+                                                    <tr key={i} className="hover:bg-[#f7f9fa] transition-colors">
+                                                        <td className="p-3 font-bold text-[#32363a] uppercase text-left leading-tight">{r.descripcion_repuesto || r.descripcion}</td>
+                                                        <td className="p-3 font-mono text-slate-500 text-left leading-none">{r.numero_parte || 'N/A'}</td>
+                                                        <td className="p-3 font-medium text-left leading-none">{r.codigo_almacen || '---'}</td>
+                                                        <td className="p-3 text-right leading-none"><span className="bg-[#e7f0f7] text-[#0070b1] px-2 py-1 rounded-sm font-black">x{r.cantidad}</span></td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
                                     ) : (
-                                        <div className="h-full flex flex-col items-center justify-center text-slate-300 py-10">
-                                            <Package size={30} strokeWidth={1} />
-                                            <p className="text-[9px] font-bold uppercase mt-2 tracking-tighter">Sin materiales registrados</p>
+                                        <div className="py-12 flex flex-col items-center justify-center text-slate-400 opacity-60">
+                                            <Package size={32} strokeWidth={1} />
+                                            <span className="text-[10px] font-bold uppercase mt-2">No se han registrado movimientos de mercancía</span>
                                         </div>
                                     )}
                                 </div>
                             </section>
-                        </div>
-                    </div>
 
-                    <div className="mt-8 pt-6 border-t border-slate-100">
-                        <h3 className="text-[11px] font-black text-slate-800 uppercase mb-3 tracking-widest">Relato Detallado del Evento Técnico</h3>
-                        <div className="bg-slate-50 p-6 rounded-[2rem] border border-slate-100 relative group overflow-hidden">
-                            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                                <PenTool size={100} />
-                            </div>
-                            <p className="text-sm text-slate-600 italic leading-relaxed whitespace-pre-wrap relative z-10">
-                                "{verEvento.evento}"
-                            </p>
-                            <span className="absolute top-2 left-4 text-6xl text-slate-200 font-serif opacity-30 select-none">“</span>
+                            <section>
+                                <h3 className="text-[12px] font-bold text-[#6a6d70] uppercase mb-4 border-b border-[#d3d7d9] pb-2 text-left leading-none">Diagnóstico Técnico del Evento</h3>
+                                <div className="bg-[#f2f4f5] p-5 border-l-4 border-[#0070b1] relative text-left">
+                                    <p className="text-sm text-[#32363a] leading-relaxed whitespace-pre-wrap font-medium">
+                                        {verEvento.evento}
+                                    </p>
+                                    <PenTool className="absolute bottom-2 right-2 text-slate-300 opacity-20" size={24} />
+                                </div>
+                            </section>
                         </div>
                     </div>
+                </div>
+
+                {/* SAP Footer Bar */}
+                <div className="bg-[#354a5f] p-2 px-6 flex justify-between items-center text-white/60 text-[10px] font-mono tracking-tighter">
+                    <span>STATUS: {verEvento.isAlta ? 'DOCUMENTO CERRADO' : 'INTERVENCIÓN ABIERTA'}</span>
+                    <span>SISTEMA DE GESTIÓN DE ACTIVOS 2026</span>
                 </div>
             </div>
         </div>
     );
 };
+
+// --- SAP Sub-components ---
+
+function FacetItem({ label, value, icon, color = "text-[#32363a]" }: any) {
+    return (
+        <div className="p-4 border-r border-[#d3d7d9] last:border-0 hover:bg-[#f7f9fa] transition-colors text-left">
+            <p className="text-[10px] font-bold text-[#6a6d70] uppercase mb-1 leading-none">{label}</p>
+            <div className={`flex items-center gap-2 font-bold ${color} leading-none`}>
+                <span className="opacity-50">{icon}</span>
+                <span className="text-sm truncate uppercase">{value}</span>
+            </div>
+        </div>
+    )
+}
+
+function SapDataField({ label, value, icon }: any) {
+    return (
+        <div className="flex items-start gap-3 text-left">
+            <div className="text-slate-300 mt-1">{icon}</div>
+            <div>
+                <label className="text-[10px] font-bold text-[#6a6d70] uppercase block leading-none mb-1">{label}</label>
+                <p className="text-xs font-black text-[#32363a] uppercase leading-tight">{value || 'No especificado'}</p>
+            </div>
+        </div>
+    )
+}
 
 export default ModalDetalle;

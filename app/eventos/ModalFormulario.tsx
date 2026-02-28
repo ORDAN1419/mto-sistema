@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
-// ✅ IMPORTACIÓN CORREGIDA: Incluye PenTool para evitar errores de compilación
-import { X, Wrench, Plus, Save, Activity, Clock, AlertTriangle, PenTool, User, Settings, Search, Database } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import {
+    X, Wrench, Plus, Save, Activity, Clock, AlertTriangle,
+    PenTool, User, Settings, Search, Database, Package, Hash, Inbox, Calendar as LucideCalendar, RefreshCw
+} from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 export const ModalFormulario = ({
@@ -22,11 +24,36 @@ export const ModalFormulario = ({
     const [sugerencias, setSugerencias] = useState<any[]>([]);
     const [sugerenciasRep, setSugerenciasRep] = useState<any[]>([]);
     const [showNuevoRepForm, setShowNuevoRepForm] = useState(false);
-
-    // Estado local para información del equipo actual
     const [equipoInfo, setEquipoInfo] = useState({ marca: '', modelo: '', horometroActual: '' });
 
-    // Lógica Predictiva: PLACAS + Carga de Marca/Modelo/Horómetro
+    // ✅ ESTADOS PARA NAVEGACIÓN POR TECLADO
+    const [indexSel, setIndexSel] = useState(-1);
+    const [indexSelRep, setIndexSelRep] = useState(-1);
+
+    // ✅ REFERENCIA PARA AUTO-FOCO
+    const inputPlacaRef = useRef<HTMLInputElement>(null);
+
+    // Lógica de Duración (Mantenida)
+    const duracionVisual = useMemo(() => {
+        if (form.H_inicial && form.H_final) {
+            const [h1, m1] = form.H_inicial.split(':').map(Number);
+            const [h2, m2] = form.H_final.split(':').map(Number);
+            const inicio = h1 + m1 / 60;
+            const fin = h2 + m2 / 60;
+            let diff = fin > inicio ? fin - inicio : (24 - inicio) + fin;
+            return diff.toFixed(2);
+        }
+        return "0.00";
+    }, [form.H_inicial, form.H_final]);
+
+    // ✅ AUTO-FOCO AL ABRIR
+    useEffect(() => {
+        if (showModal) {
+            setTimeout(() => inputPlacaRef.current?.focus(), 150);
+        }
+    }, [showModal]);
+
+    // Búsqueda de Placas (Mantenida)
     useEffect(() => {
         const buscarPlacas = async () => {
             if (!form.placa || form.placa.length < 1) {
@@ -34,7 +61,6 @@ export const ModalFormulario = ({
                 setEquipoInfo({ marca: '', modelo: '', horometroActual: '' });
                 return;
             }
-            // ✅ MODIFICADO: Ahora también traemos horometroMayor para el auto-relleno
             const { data } = await supabase.from('maestroEquipos')
                 .select('placaRodaje, codigoEquipo, marca, modelo, horometroMayor')
                 .or(`placaRodaje.ilike.%${form.placa}%,codigoEquipo.ilike.%${form.placa}%`)
@@ -56,7 +82,7 @@ export const ModalFormulario = ({
         return () => clearTimeout(timeoutId);
     }, [form.placa]);
 
-    // Lógica Predictiva: REPUESTOS
+    // Búsqueda de Repuestos (Mantenida)
     useEffect(() => {
         const buscarRepuestos = async () => {
             if (!nuevoRepuesto.descripcion || nuevoRepuesto.descripcion.length < 2) { setSugerenciasRep([]); return; }
@@ -70,16 +96,29 @@ export const ModalFormulario = ({
         return () => clearTimeout(timeoutId);
     }, [nuevoRepuesto.descripcion]);
 
-    // Auto-relleno de marca y modelo al abrir el form de nuevo repuesto
-    useEffect(() => {
-        if (showNuevoRepForm) {
-            setNuevoRepuesto((prev: any) => ({
-                ...prev,
-                marca: equipoInfo.marca,
-                modelo: equipoInfo.modelo
-            }));
-        }
-    }, [showNuevoRepForm, equipoInfo]);
+    const seleccionarEquipo = (item: any) => {
+        setForm({ ...form, placa: item.placaRodaje, horometro: item.horometroMayor || '' });
+        setEquipoInfo({ marca: item.marca, modelo: item.modelo, horometroActual: item.horometroMayor });
+        setSugerencias([]);
+        setIndexSel(-1);
+    };
+
+    const seleccionarRepuesto = (rep: any) => {
+        setNuevoRepuesto({
+            ...nuevoRepuesto,
+            id: rep.id,
+            descripcion: rep.descripcion_repuesto,
+            codigo_almacen: rep.codigo_almacen,
+            numero_parte: rep.numero_parte
+        });
+        setSugerenciasRep([]);
+        setIndexSelRep(-1);
+    };
+
+    const establecerFechaHoy = () => {
+        const hoy = new Date().toISOString().split('T')[0];
+        setForm({ ...form, fecha_evento: hoy });
+    };
 
     const guardarNuevoRepuestoBase = async () => {
         if (!nuevoRepuesto.descripcion) return alert("Mínimo requiere descripción");
@@ -93,14 +132,8 @@ export const ModalFormulario = ({
         }]).select().single();
 
         if (!error && data) {
-            alert("✅ Repuesto guardado en Base de Datos");
-            setNuevoRepuesto({
-                ...nuevoRepuesto,
-                id: data.id,
-                descripcion: data.descripcion_repuesto,
-                codigo_almacen: data.codigo_almacen,
-                numero_parte: data.numero_parte
-            });
+            alert("✅ Registro maestro actualizado");
+            setNuevoRepuesto({ ...nuevoRepuesto, id: data.id, descripcion: data.descripcion_repuesto });
             setShowNuevoRepForm(false);
             setSugerenciasRep([]);
         }
@@ -108,219 +141,187 @@ export const ModalFormulario = ({
 
     if (!showModal) return null;
 
-    const establecerFechaHoy = () => {
-        const fechaLocal = new Date();
-        const offset = fechaLocal.getTimezoneOffset() * 60000;
-        const fechaAjustada = new Date(fechaLocal.getTime() - offset);
-        const hoy = fechaAjustada.toISOString().split('T')[0];
-        setForm({ ...form, fecha_evento: hoy });
-    };
-
     return (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-            <div className="bg-white w-full max-w-6xl rounded-[2.5rem] shadow-2xl overflow-hidden p-8 animate-in zoom-in duration-200 border border-slate-100 max-h-[95vh] overflow-y-auto">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm text-left leading-none">
+            <div className="bg-[#f7f9fa] w-full max-w-6xl rounded-sm shadow-2xl overflow-hidden flex flex-col border border-[#d3d7d9] max-h-[95vh] animate-in zoom-in-95 duration-200">
 
-                {/* Cabecera */}
-                <div className="flex justify-between items-center mb-6 border-b border-slate-50 pb-4">
+                {/* SAP Header Bar */}
+                <div className="bg-[#354a5f] p-4 flex justify-between items-center text-white">
                     <div className="flex items-center gap-3">
-                        <div className="bg-blue-600 p-2 rounded-xl text-white shadow-lg shadow-blue-100"><Wrench size={18} /></div>
-                        <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">
-                            {isEditing ? `Editando Reporte: ${form.placa}` : "Nuevo Registro Técnico"}
+                        <Wrench size={18} className="text-[#34ebff]" />
+                        <h3 className="text-sm font-bold uppercase tracking-widest leading-none">
+                            {isEditing ? `Edición de Documento: ${form.placa}` : "Crear Documento Técnico de Mantenimiento"}
                         </h3>
                     </div>
-                    <button onClick={() => setShowModal(false)} className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-full transition-all">
-                        <X size={24} />
-                    </button>
+                    <X size={24} className="cursor-pointer hover:bg-white/10 rounded-sm" onClick={() => setShowModal(false)} />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                    {/* Columna 1: Equipo y Tiempos */}
-                    <div className="space-y-4">
-                        <div className="bg-slate-50 p-5 rounded-[1.5rem] border border-slate-100 space-y-4">
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="space-y-1 relative">
-                                    <label className="text-[9px] font-bold text-blue-600 uppercase ml-1">Placa</label>
-                                    <div className="relative">
-                                        <input
-                                            value={form.placa || ''}
-                                            onChange={e => setForm({ ...form, placa: e.target.value.toUpperCase() })}
-                                            placeholder="BUSCAR..."
-                                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-[11px] font-black outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-50"
-                                        />
-                                        {sugerencias.length > 0 && (
-                                            <div className="absolute top-full left-0 right-0 bg-white border border-slate-200 rounded-xl mt-1 shadow-xl z-50 overflow-hidden">
-                                                {sugerencias.map((item) => (
-                                                    <div key={item.placaRodaje} className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-slate-50 last:border-0"
-                                                        onClick={() => {
-                                                            // ✅ MODIFICADO: Rellena placa y horómetro actual automáticamente
-                                                            setForm({
-                                                                ...form,
-                                                                placa: item.placaRodaje,
-                                                                horometro: item.horometroMayor || ''
-                                                            });
-                                                            setEquipoInfo({ marca: item.marca, modelo: item.modelo, horometroActual: item.horometroMayor });
-                                                            setSugerencias([]);
-                                                        }}>
-                                                        <p className="text-[10px] font-black text-slate-700">{item.placaRodaje}</p>
-                                                        <p className="text-[8px] text-slate-400 font-bold uppercase">{item.codigoEquipo || 'Sin código'}</p>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-[9px] font-bold text-blue-600 uppercase ml-1">Horómetro</label>
-                                    <input type="number" value={form.horometro || ''} onChange={e => setForm({ ...form, horometro: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-xl text-[11px] font-black font-mono outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-50" />
-                                </div>
-                            </div>
-
-                            <div className="pt-2 border-t border-slate-200 space-y-3">
-                                <div className="flex justify-between items-center">
-                                    <p className="text-[9px] font-black text-slate-400 uppercase flex items-center gap-2"><Clock size={12} /> Control de Tiempos</p>
-                                    {!form.fecha_evento && <button onClick={establecerFechaHoy} className="text-[8px] bg-blue-100 text-blue-600 px-2 py-1 rounded-md font-bold hover:bg-blue-200">USAR FECHA HOY</button>}
-                                </div>
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div className="space-y-1">
-                                        <label className="text-[9px] font-bold text-slate-500 ml-1">INICIO (24H)</label>
-                                        {/* ✅ MODIFICADO: Lang="en-GB" fuerza el formato 24h en la mayoría de navegadores */}
-                                        <input type="time" lang="en-GB" value={form.H_inicial || ''} onChange={e => setForm({ ...form, H_inicial: e.target.value })} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-[11px] font-bold outline-none focus:border-blue-500" />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-[9px] font-bold text-slate-500 ml-1">FIN (24H)</label>
-                                        <input type="time" lang="en-GB" value={form.H_final || ''} onChange={e => setForm({ ...form, H_final: e.target.value })} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-[11px] font-bold outline-none focus:border-blue-500" />
-                                    </div>
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-[9px] font-bold text-slate-500 ml-1">FECHA EVENTO</label>
-                                    <input type="date" value={form.fecha_evento || ''} onChange={e => setForm({ ...form, fecha_evento: e.target.value })} className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-[11px] font-bold outline-none focus:border-blue-500" />
-                                </div>
-                            </div>
+                <div className="p-0 overflow-y-auto flex-grow bg-white text-left">
+                    {/* SAP Object Header Facets */}
+                    <div className="bg-[#fcfdfe] border-b border-[#d3d7d9] p-4 grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <FacetItem label="Objeto Técnico" value={form.placa || 'No definido'} icon={<Search size={14} />} />
+                        <FacetItem label="Duración (Calculada)" value={`${duracionVisual} h`} icon={<Clock size={14} />} color="text-[#0070b1]" />
+                        <FacetItem label="Fecha de Registro" value={form.fecha_evento || '---'} icon={<LucideCalendar size={14} />} />
+                        <div className="flex items-center justify-end">
+                            <button onClick={establecerFechaHoy} className="text-[10px] font-bold text-[#0070b1] border border-[#0070b1] px-3 py-1 rounded-sm hover:bg-[#e7f0f7] transition-colors uppercase">Fijar Hoy</button>
                         </div>
                     </div>
 
-                    {/* Columna 2: Clasificación */}
-                    <div className="space-y-4">
-                        <div className="space-y-1">
-                            <label className="text-[9px] font-bold text-slate-400 uppercase ml-1 flex items-center gap-1"><Settings size={10} /> Tipo de Trabajo</label>
-                            <select value={form.tipoTrabajo || ""} onChange={e => setForm({ ...form, tipoTrabajo: e.target.value })} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-100 rounded-xl text-[11px] font-black outline-none focus:bg-white focus:border-blue-500 transition-all cursor-pointer">
-                                <option value="">SELECCIONAR TIPO...</option>
-                                <option value="INSPECCION">🔍 INSPECCION (EQUIPO OPERATIVO)</option>
-                                <option value="MTTO. PREV">🛡️ MTTO. PREVENTIVO (INOPERATIVO)</option>
-                                <option value="MTTO. PROG">📅 MTTO. PROGRAMADO (INOPERATIVO)</option>
-                                <option value="MTTO. CORRECTIVO">🛠️ MTTO. CORRECTIVO (INOPERATIVO)</option>
-                                <option value="ACCIDENTE">⚠️ ACCIDENTE (INOPERATIVO)</option>
-                            </select>
-                        </div>
-                        <div className="space-y-1">
-                            <label className="text-[9px] font-bold text-slate-400 uppercase ml-1">Sistema</label>
-                            <select value={especificarSistema ? "OTRO" : (form.sistema || "")} onChange={e => { if (e.target.value === "OTRO") { setEspecificarSistema(true); setForm({ ...form, sistema: "" }); } else { setEspecificarSistema(false); setForm({ ...form, sistema: e.target.value }); } }} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-100 rounded-xl text-[11px] font-black outline-none focus:bg-white focus:border-blue-500 cursor-pointer">
-                                <option value="">SISTEMA...</option>
-                                <option value="MOTOR">MOTOR</option><option value="TRANSMISIÓN">TRANSMISIÓN</option><option value="SIST. ELÉCTRICO">SIST. ELÉCTRICO</option><option value="HIDRÁULICO">HIDRÁULICO</option><option value="FRENOS">FRENOS</option><option value="ESTRUCTURA">ESTRUCTURA</option><option value="OTRO">➕ OTRO...</option>
-                            </select>
-                        </div>
-                        {especificarSistema && <input placeholder="ESCRIBIR SISTEMA NUEVO" value={form.sistema || ''} onChange={e => setForm({ ...form, sistema: e.target.value.toUpperCase() })} className="w-full px-4 py-2 bg-blue-50 border border-blue-200 rounded-xl text-[11px] font-black text-blue-700 outline-none animate-in slide-in-from-top-1" />}
-                        <div className="space-y-1">
-                            <label className="text-[9px] font-bold text-slate-400 uppercase ml-1">Subsistema</label>
-                            <input placeholder="Ej. INYECTORES, BOMBA..." value={form.subsistema || ''} onChange={e => setForm({ ...form, subsistema: e.target.value.toUpperCase() })} className="w-full px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-[11px] font-bold outline-none focus:bg-white focus:border-blue-500" />
-                        </div>
-                        <div className="space-y-1">
-                            <label className="text-[9px] font-bold text-slate-400 uppercase ml-1 flex items-center gap-1"><User size={10} /> Técnico Responsable</label>
-                            <input placeholder="NOMBRE DEL TÉCNICO" value={form.tecnico || ''} onChange={e => setForm({ ...form, tecnico: e.target.value.toUpperCase() })} className="w-full px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-[11px] font-bold outline-none focus:bg-white focus:border-blue-500" />
-                        </div>
-                    </div>
-
-                    {/* Columna 3: Relato y Repuestos Predictivos */}
-                    <div className="flex flex-col space-y-4">
-                        <div className="space-y-1">
-                            <label className="text-[9px] font-bold text-slate-400 uppercase ml-1 flex items-center gap-1"><PenTool size={10} /> Descripción del Evento</label>
-                            <textarea value={form.evento || ''} onChange={e => setForm({ ...form, evento: e.target.value })} className="w-full h-[100px] p-4 bg-slate-50 border border-slate-100 rounded-[1.5rem] text-[11px] italic resize-none outline-none focus:bg-white focus:border-blue-500 transition-all shadow-inner" placeholder="Relato detallado..." />
-                        </div>
-
-                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 relative">
-                            <div className="flex justify-between items-center mb-2">
-                                <p className="text-[9px] font-black text-slate-400 uppercase flex items-center gap-1"><Database size={12} /> Repuestos</p>
-                                <button onClick={() => setShowNuevoRepForm(!showNuevoRepForm)} className="text-[8px] bg-white border border-slate-200 text-blue-600 px-2 py-1 rounded-md font-black hover:bg-blue-600 hover:text-white transition-all">
-                                    {showNuevoRepForm ? "X CERRAR" : "+ CREAR NUEVO"}
-                                </button>
-                            </div>
-
-                            {!showNuevoRepForm ? (
-                                <div className="space-y-2 relative">
-                                    <div className="flex gap-2">
-                                        <input
-                                            placeholder="Descripción, Almacén o Parte..."
-                                            value={nuevoRepuesto.descripcion || ''}
-                                            onChange={e => setNuevoRepuesto({ ...nuevoRepuesto, descripcion: e.target.value.toUpperCase() })}
-                                            className="flex-grow px-3 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-bold outline-none focus:border-blue-500"
-                                        />
-                                        <input type="number" className="w-12 px-1 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-center" value={nuevoRepuesto.cantidad || 1} onChange={e => setNuevoRepuesto({ ...nuevoRepuesto, cantidad: Number(e.target.value) })} />
-                                        <button onClick={agregarRepuestoALista} className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-md transition-all"><Plus size={14} /></button>
-                                    </div>
-                                    {sugerenciasRep.length > 0 && (
-                                        <div className="absolute top-full left-0 right-0 bg-white border border-slate-200 rounded-xl mt-1 shadow-2xl z-50 max-h-48 overflow-y-auto">
-                                            {sugerenciasRep.map((rep, idx) => (
-                                                <div key={rep.id || idx} className="p-2 hover:bg-blue-50 cursor-pointer border-b border-slate-50 last:border-0 transition-colors"
-                                                    onClick={() => {
-                                                        setNuevoRepuesto({
-                                                            ...nuevoRepuesto,
-                                                            id: rep.id,
-                                                            descripcion: rep.descripcion_repuesto,
-                                                            codigo_almacen: rep.codigo_almacen,
-                                                            numero_parte: rep.numero_parte
-                                                        });
-                                                        setSugerenciasRep([]);
-                                                    }}>
-                                                    <p className="text-[10px] font-black text-blue-600">{rep.descripcion_repuesto}</p>
-                                                    <div className="flex flex-wrap gap-2 text-[7px] text-slate-400 font-bold mt-0.5 uppercase">
-                                                        <span className="bg-slate-100 px-1 rounded text-slate-600">📦 {rep.codigo_almacen || '---'}</span>
-                                                        <span className="bg-slate-100 px-1 rounded text-slate-600">⚙️ {rep.numero_parte || '---'}</span>
-                                                        <span className="text-slate-500">{rep.marca} {rep.modelo}</span>
-                                                    </div>
+                    <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        {/* Columna 1: Equipo */}
+                        <div className="space-y-6">
+                            <SapSectionTitle title="Datos Maestros de Equipo" icon={<Settings />} />
+                            <div className="space-y-4">
+                                <div className="space-y-1 relative text-left">
+                                    <label className="text-[11px] font-bold text-[#6a6d70] uppercase block leading-none">Unidad (Placa)</label>
+                                    <input
+                                        ref={inputPlacaRef}
+                                        value={form.placa || ''}
+                                        placeholder="BUSCAR ACTIVO..."
+                                        onChange={(e) => { setForm({ ...form, placa: e.target.value.toUpperCase() }); setIndexSel(-1); }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'ArrowDown') setIndexSel(p => Math.min(p + 1, sugerencias.length - 1));
+                                            if (e.key === 'ArrowUp') setIndexSel(p => Math.max(p - 1, -1));
+                                            if (e.key === 'Enter' && indexSel >= 0) { seleccionarEquipo(sugerencias[indexSel]); e.preventDefault(); }
+                                        }}
+                                        className="w-full border border-[#b0b3b5] focus:border-[#0070b1] outline-none p-1.5 text-xs rounded-sm font-bold uppercase"
+                                    />
+                                    {sugerencias.length > 0 && (
+                                        <div className="absolute top-full left-0 right-0 bg-white border border-[#b0b3b5] shadow-2xl z-[60] mt-1 rounded-sm overflow-hidden text-left">
+                                            {sugerencias.map((s, i) => (
+                                                <div key={i} className={`p-2 cursor-pointer text-[10px] border-b border-[#f2f4f5] ${indexSel === i ? 'bg-[#0070b1] text-white' : 'hover:bg-[#e7f0f7]'}`} onClick={() => seleccionarEquipo(s)}>
+                                                    <span className="font-bold">{s.placaRodaje}</span> <span className="ml-2 opacity-70 italic">{s.codigoEquipo}</span>
                                                 </div>
                                             ))}
                                         </div>
                                     )}
                                 </div>
-                            ) : (
-                                <div className="space-y-2 bg-white p-3 rounded-xl border border-blue-100 shadow-sm animate-in slide-in-from-top-1">
-                                    <p className="text-[8px] font-black text-blue-600 mb-1">REGISTRAR EN BASE DE DATOS</p>
-                                    <input placeholder="DESCRIPCIÓN *" value={nuevoRepuesto.descripcion} onChange={e => setNuevoRepuesto({ ...nuevoRepuesto, descripcion: e.target.value.toUpperCase() })} className="w-full px-2 py-1.5 border rounded-md text-[9px] font-bold" />
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <input placeholder="CÓD. ALMACÉN" value={nuevoRepuesto.codigo_almacen || ''} onChange={e => setNuevoRepuesto({ ...nuevoRepuesto, codigo_almacen: e.target.value.toUpperCase() })} className="px-2 py-1.5 border rounded-md text-[9px]" />
-                                        <input placeholder="N° PARTE" value={nuevoRepuesto.numero_parte || ''} onChange={e => setNuevoRepuesto({ ...nuevoRepuesto, numero_parte: e.target.value.toUpperCase() })} className="px-2 py-1.5 border rounded-md text-[9px]" />
-                                        <input placeholder="MARCA" value={nuevoRepuesto.marca || ''} onChange={e => setNuevoRepuesto({ ...nuevoRepuesto, marca: e.target.value.toUpperCase() })} className="px-2 py-1.5 border rounded-md text-[9px]" />
-                                        <input placeholder="MODELO" value={nuevoRepuesto.modelo || ''} onChange={e => setNuevoRepuesto({ ...nuevoRepuesto, modelo: e.target.value.toUpperCase() })} className="px-2 py-1.5 border rounded-md text-[9px]" />
-                                    </div>
-                                    <button onClick={guardarNuevoRepuestoBase} className="w-full bg-blue-600 text-white py-2 rounded-md text-[9px] font-black uppercase hover:bg-blue-700 transition-colors">GUARDAR EN MAESTRO</button>
+                                <SapInput label="Lectura Horómetro" type="number" value={form.horometro} onChange={(v: any) => setForm({ ...form, horometro: v })} />
+                                <div className="grid grid-cols-2 gap-4">
+                                    <SapInput label="Hora Inicio" type="time" value={form.H_inicial} onChange={(v: any) => setForm({ ...form, H_inicial: v })} />
+                                    <SapInput label="Hora Término" type="time" value={form.H_final} onChange={(v: any) => setForm({ ...form, H_final: v })} />
                                 </div>
-                            )}
-
-                            <div className="mt-3 max-h-32 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
-                                {repuestos.map((r: any, i: number) => (
-                                    <div key={i} className="flex justify-between items-center bg-white p-2.5 rounded-xl border border-slate-100 text-[9px] font-black uppercase shadow-sm">
-                                        <div className="flex flex-col">
-                                            <span className="text-slate-700">{r.cantidad}x {r.descripcion_repuesto || r.descripcion}</span>
-                                            <div className="flex gap-2 text-[6px] text-slate-400">
-                                                <span>P/N: {r.numero_parte || 'N/A'}</span>
-                                                <span>CÓD: {r.codigo_almacen || 'N/A'}</span>
-                                            </div>
-                                        </div>
-                                        <button onClick={() => setRepuestos(repuestos.filter((_: any, idx: number) => idx !== i))} className="text-rose-400 hover:text-rose-600 p-1"><X size={12} /></button>
-                                    </div>
-                                ))}
+                                <SapInput label="Fecha Técnica" type="date" value={form.fecha_evento} onChange={(v: any) => setForm({ ...form, fecha_evento: v })} />
                             </div>
                         </div>
 
+                        {/* Columna 2: Clasificación */}
+                        <div className="space-y-6">
+                            <SapSectionTitle title="Mantenimiento y Control" icon={<Activity />} />
+                            <div className="space-y-4 text-left">
+                                <div className="space-y-1 text-left leading-none">
+                                    <label className="text-[11px] font-bold text-[#6a6d70] uppercase block">Tipo de Intervención</label>
+                                    <select value={form.tipoTrabajo || ""} onChange={(e) => setForm({ ...form, tipoTrabajo: e.target.value })} className="w-full border border-[#b0b3b5] focus:border-[#0070b1] outline-none p-1.5 text-xs rounded-sm font-bold bg-white cursor-pointer uppercase">
+                                        <option value="">SELECCIONAR TIPO...</option>
+                                        <option value="INSPECCION">🔍 INSPECCION (EQUIPO OPERATIVO)</option>
+                                        <option value="MTTO. PREV">🛡️ MTTO. PREVENTIVO (INOPERATIVO)</option>
+                                        <option value="MTTO. PROG">📅 MTTO. PROGRAMADO (INOPERATIVO)</option>
+                                        <option value="MTTO. CORRECTIVO">🛠️ MTTO. CORRECTIVO (INOPERATIVO)</option>
+                                        <option value="ACCIDENTE">⚠️ ACCIDENTE (INOPERATIVO)</option>
+                                        <option value="INOPERATIVO">🚫 INOPERATIVO (FUERA DE SERVICIO)</option>
+                                    </select>
+                                </div>
+
+                                <div className="space-y-1 text-left leading-none">
+                                    <label className="text-[11px] font-bold text-[#6a6d70] uppercase block">Sistema Afectado</label>
+                                    <select value={especificarSistema ? "OTRO" : (form.sistema || "")} onChange={(e) => { if (e.target.value === "OTRO") { setEspecificarSistema(true); setForm({ ...form, sistema: "" }); } else { setEspecificarSistema(false); setForm({ ...form, sistema: e.target.value }); } }} className="w-full border border-[#b0b3b5] focus:border-[#0070b1] outline-none p-1.5 text-xs rounded-sm font-bold bg-white cursor-pointer uppercase">
+                                        <option value="">SELECCIONAR SISTEMA...</option>
+                                        <option value="MOTOR">MOTOR</option><option value="TRANSMISIÓN">TRANSMISIÓN</option><option value="SIST. ELÉCTRICO">SIST. ELÉCTRICO</option><option value="HIDRÁULICO">HIDRÁULICO</option><option value="FRENOS">FRENOS</option><option value="ESTRUCTURA">ESTRUCTURA</option><option value="OTRO">➕ ESPECIFICAR OTRO...</option>
+                                    </select>
+                                </div>
+                                {especificarSistema && <input className="w-full border-b-2 border-[#0070b1] outline-none text-xs p-1 bg-[#e7f0f7] font-bold" placeholder="Escriba sistema nuevo..." value={form.sistema} onChange={(e) => setForm({ ...form, sistema: e.target.value.toUpperCase() })} />}
+
+                                <SapInput label="Subsistema / Nodo" value={form.subsistema} onChange={(v: any) => setForm({ ...form, subsistema: v.toUpperCase() })} />
+                                <SapInput label="Técnico a Cargo" value={form.tecnico} onChange={(v: any) => setForm({ ...form, tecnico: v.toUpperCase() })} icon={<User size={12} />} />
+                            </div>
+                        </div>
+
+                        {/* Columna 3: Notas y Repuestos */}
+                        <div className="space-y-6">
+                            <SapSectionTitle title="Notas y Suministros" icon={<Database />} />
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="text-[11px] font-bold text-[#6a6d70] uppercase block mb-1 leading-none">Informe Detallado</label>
+                                    <textarea value={form.evento} onChange={(e) => setForm({ ...form, evento: e.target.value })} className="w-full h-24 border border-[#b0b3b5] p-2 text-xs outline-none focus:border-[#0070b1] resize-none italic bg-[#f9f9f9] text-left" placeholder="Relato técnico del evento..." />
+                                </div>
+
+                                <div className="border border-[#d3d7d9] p-3 bg-[#f7f9fa] relative text-left leading-none">
+                                    <div className="flex justify-between items-center mb-3">
+                                        <span className="text-[10px] font-bold text-[#6a6d70] uppercase">Materiales (BOM)</span>
+                                        <button onClick={() => setShowNuevoRepForm(!showNuevoRepForm)} className="text-[9px] font-bold text-[#0070b1] uppercase underline">
+                                            {showNuevoRepForm ? "Cerrar" : "+ Maestro de Materiales"}
+                                        </button>
+                                    </div>
+
+                                    {!showNuevoRepForm ? (
+                                        <div className="space-y-2 relative">
+                                            <div className="flex gap-1">
+                                                <input
+                                                    placeholder="Buscar componente..."
+                                                    value={nuevoRepuesto.descripcion}
+                                                    onChange={(e) => { setNuevoRepuesto({ ...nuevoRepuesto, descripcion: e.target.value.toUpperCase() }); setIndexSelRep(-1); }}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'ArrowDown') setIndexSelRep(p => Math.min(p + 1, sugerenciasRep.length - 1));
+                                                        if (e.key === 'ArrowUp') setIndexSelRep(p => Math.max(p - 1, -1));
+                                                        if (e.key === 'Enter' && indexSelRep >= 0) { seleccionarRepuesto(sugerenciasRep[indexSelRep]); e.preventDefault(); }
+                                                    }}
+                                                    className="flex-grow border border-[#b0b3b5] p-1.5 text-xs outline-none focus:border-[#0070b1] font-bold uppercase"
+                                                />
+                                                <input type="number" className="w-12 border border-[#b0b3b5] text-center text-xs font-bold" value={nuevoRepuesto.cantidad || 1} onChange={(e) => setNuevoRepuesto({ ...nuevoRepuesto, cantidad: Number(e.target.value) })} />
+                                                <button onClick={agregarRepuestoALista} className="bg-[#0070b1] text-white px-2 rounded-sm hover:bg-[#005a8e] transition-colors"><Plus size={16} /></button>
+                                            </div>
+                                            {sugerenciasRep.length > 0 && (
+                                                <div className="absolute top-full left-0 right-0 bg-white border border-[#b0b3b5] shadow-2xl z-50 max-h-32 overflow-y-auto text-left">
+                                                    {sugerenciasRep.map((rep, idx) => (
+                                                        <div key={idx} className={`p-2 cursor-pointer text-[10px] border-b border-[#f2f4f5] ${indexSelRep === idx ? 'bg-[#0070b1] text-white' : 'hover:bg-[#e7f0f7]'}`} onClick={() => seleccionarRepuesto(rep)}>
+                                                            <p className="font-bold uppercase leading-tight">{rep.descripcion_repuesto}</p>
+                                                            <p className={`text-[8px] uppercase ${indexSelRep === idx ? 'text-white' : 'text-slate-400'}`}>P/N: {rep.numero_parte} | ALM: {rep.codigo_almacen}</p>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2 bg-white p-2 border border-[#b0b3b5] animate-in fade-in duration-300">
+                                            <input placeholder="DESCRIPCIÓN *" value={nuevoRepuesto.descripcion} onChange={(e) => setNuevoRepuesto({ ...nuevoRepuesto, descripcion: e.target.value.toUpperCase() })} className="w-full border p-1 text-[10px] outline-none font-bold" />
+                                            <div className="grid grid-cols-2 gap-1">
+                                                <input placeholder="N° PARTE" value={nuevoRepuesto.numero_parte} onChange={(e) => setNuevoRepuesto({ ...nuevoRepuesto, numero_parte: e.target.value.toUpperCase() })} className="border p-1 text-[10px] font-bold" />
+                                                <input placeholder="ALMACÉN" value={nuevoRepuesto.codigo_almacen} onChange={(e) => setNuevoRepuesto({ ...nuevoRepuesto, codigo_almacen: e.target.value.toUpperCase() })} className="border p-1 text-[10px] font-bold" />
+                                            </div>
+                                            <button onClick={guardarNuevoRepuestoBase} className="w-full bg-[#354a5f] text-white text-[9px] py-1.5 font-bold uppercase tracking-widest">Registrar en Maestro</button>
+                                        </div>
+                                    )}
+
+                                    <div className="mt-3 space-y-1 max-h-32 overflow-y-auto pr-1">
+                                        {repuestos.map((r: any, i: number) => (
+                                            <div key={i} className="flex justify-between items-center bg-white border border-[#d3d7d9] p-1.5 rounded-sm shadow-sm animate-in slide-in-from-right-1">
+                                                <div className="flex flex-col leading-none">
+                                                    <span className="text-[10px] font-bold text-[#32363a] uppercase">{r.cantidad}x {r.descripcion_repuesto || r.descripcion}</span>
+                                                    <span className="text-[7px] text-slate-400 font-bold uppercase mt-1">P/N: {r.numero_parte || '---'} | ALM: {r.codigo_almacen || '---'}</span>
+                                                </div>
+                                                <X size={12} className="text-rose-500 cursor-pointer hover:scale-110" onClick={() => setRepuestos(repuestos.filter((_: any, idx: number) => idx !== i))} />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Footer Action Bar */}
+                <div className="bg-[#f7f9fa] border-t border-[#d3d7d9] p-4 flex justify-between items-center">
+                    <div className="flex items-center gap-2">
                         {form.tipoTrabajo && form.tipoTrabajo !== "INSPECCION" && (
-                            <div className="flex items-center gap-2 p-2.5 bg-amber-50 border border-amber-100 rounded-xl text-amber-700 text-[10px] font-bold italic animate-pulse">
-                                <AlertTriangle size={14} /> El equipo se marcará como INOPERATIVO
+                            <div className="flex items-center gap-2 text-amber-600 font-bold text-[10px] uppercase animate-pulse leading-none">
+                                <AlertTriangle size={14} /> Estatus de Activo: Inoperativo
                             </div>
                         )}
-
-                        <button onClick={guardarEvento} disabled={enviando}
-                            className={`w-full py-4 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg flex items-center justify-center gap-2 transition-all disabled:opacity-50 ${form.tipoTrabajo && form.tipoTrabajo !== "INSPECCION" ? 'bg-amber-600 hover:bg-amber-700 text-white' : 'bg-[#0F172A] hover:bg-black text-white'}`}>
-                            {enviando ? <Activity className="animate-spin" size={14} /> : <><Save size={14} /> {isEditing ? "ACTUALIZAR" : "GUARDAR REPORTE"}</>}
+                    </div>
+                    <div className="flex gap-2">
+                        <button onClick={() => setShowModal(false)} className="px-6 py-2 border border-[#b0b3b5] text-[#32363a] text-xs font-bold hover:bg-[#ebeef0] rounded-sm transition-all uppercase">Cancelar</button>
+                        <button onClick={guardarEvento} disabled={enviando} className={`px-8 py-2 rounded-sm font-bold text-xs uppercase shadow-sm transition-all flex items-center gap-2 ${form.tipoTrabajo && form.tipoTrabajo !== "INSPECCION" ? 'bg-amber-600 hover:bg-amber-700' : 'bg-[#0854a0] hover:bg-[#0a6ed1]'} text-white active:scale-95 disabled:opacity-50`}>
+                            {enviando ? <RefreshCw size={14} className="animate-spin" /> : <><Save size={14} /> Post Transaction</>}
                         </button>
                     </div>
                 </div>
@@ -328,3 +329,60 @@ export const ModalFormulario = ({
         </div>
     );
 };
+
+// --- SAP UI HELPERS ---
+
+function SapSectionTitle({ title, icon }: any) {
+    return (
+        <h3 className="text-[12px] font-bold text-[#6a6d70] uppercase mb-4 border-b border-[#d3d7d9] pb-1 flex items-center gap-2 leading-none text-left">
+            <span className="text-[#0070b1]">{icon}</span> {title}
+        </h3>
+    );
+}
+
+function SapInput({ label, value, onChange, placeholder, type = "text", icon }: any) {
+    return (
+        <div className="space-y-1 relative text-left leading-none">
+            <label className="text-[11px] font-bold text-[#6a6d70] uppercase block leading-none">{label}</label>
+            <div className="relative">
+                {icon && <div className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-300">{icon}</div>}
+                <input
+                    type={type}
+                    value={value || ''}
+                    onChange={(e: any) => onChange(e.target.value)}
+                    placeholder={placeholder}
+                    className={`w-full border border-[#b0b3b5] focus:border-[#0070b1] outline-none p-1.5 text-xs rounded-sm transition-all font-bold ${icon ? 'pl-7' : ''} uppercase`}
+                />
+            </div>
+        </div>
+    );
+}
+
+function FacetItem({ label, value, icon, color = "text-[#32363a]" }: any) {
+    return (
+        <div className="border-r border-[#d3d7d9] last:border-0 pr-4 text-left leading-none">
+            <p className="text-[10px] font-bold text-[#6a6d70] uppercase mb-1 leading-none">{label}</p>
+            <div className={`flex items-center gap-2 font-bold ${color} leading-none`}>
+                <span className="opacity-40">{icon}</span>
+                <span className="text-xs uppercase">{value}</span>
+            </div>
+        </div>
+    );
+}
+
+// ✅ SUBCOMPONENTE SAP SELECT (Corregido TypeScript)
+function SapSelect({ label, value, onChange, options }: any) {
+    return (
+        <div className="space-y-1 text-left leading-none">
+            <label className="text-[11px] font-bold text-[#6a6d70] uppercase block leading-none">{label}</label>
+            <select
+                value={value || ""}
+                onChange={(e: any) => onChange(e.target.value)}
+                className="w-full border border-[#b0b3b5] focus:border-[#0070b1] outline-none p-1.5 text-xs rounded-sm font-bold bg-white cursor-pointer uppercase"
+            >
+                <option value="">Seleccione...</option>
+                {options.map((o: any) => <option key={o.v} value={o.v}>{o.l}</option>)}
+            </select>
+        </div>
+    );
+}

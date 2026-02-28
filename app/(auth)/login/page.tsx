@@ -14,14 +14,14 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
     setErrorMsg(null)
-    
+
     try {
       // 1. Intentar el login con Supabase
-      const { data, error } = await supabase.auth.signInWithPassword({ 
-        email: email.trim(), 
-        password: password 
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password: password
       })
-      
+
       if (error) {
         setErrorMsg("Acceso denegado: " + error.message)
         setLoading(false)
@@ -42,7 +42,7 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen bg-white flex items-center justify-center p-6 selection:bg-slate-900 selection:text-white">
       <div className="max-w-[340px] w-full space-y-12 animate-in fade-in zoom-in duration-700">
-        
+
         {/* Header Minimalista Profesional */}
         <div className="space-y-3 text-left">
           <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-white shadow-[0_10px_30px_rgba(0,0,0,0.1)]">
@@ -59,7 +59,7 @@ export default function LoginPage() {
             <div className="space-y-1">
               <label className="text-[9px] font-black text-slate-300 uppercase ml-1 tracking-widest italic">Usuario</label>
               <div className="relative">
-                <input 
+                <input
                   type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
                   className="w-full py-3 bg-transparent border-b border-slate-100 text-sm font-bold outline-none focus:border-slate-900 transition-all placeholder:text-slate-100"
                   placeholder="correo@empresa.com"
@@ -70,7 +70,7 @@ export default function LoginPage() {
             <div className="space-y-1">
               <label className="text-[9px] font-black text-slate-300 uppercase ml-1 tracking-widest italic">Contraseña</label>
               <div className="relative">
-                <input 
+                <input
                   type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
                   className="w-full py-3 bg-transparent border-b border-slate-100 text-sm font-bold outline-none focus:border-slate-900 transition-all placeholder:text-slate-100"
                   placeholder="••••••••"
@@ -85,7 +85,7 @@ export default function LoginPage() {
             </p>
           )}
 
-          <button 
+          <button
             type="submit"
             disabled={loading}
             className="w-full bg-slate-900 text-white py-5 rounded-full font-black text-[10px] uppercase tracking-[0.2em] shadow-[0_20px_40px_rgba(0,0,0,0.1)] hover:bg-blue-600 transition-all active:scale-95 flex items-center justify-center gap-3 italic disabled:opacity-50"

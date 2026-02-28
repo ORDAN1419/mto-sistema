@@ -1,4 +1,4 @@
-import { ChevronRight, Activity, Calendar, Hash, Wrench, User } from 'lucide-react';
+import { ChevronRight, Activity, Calendar, Hash, Wrench, User, ExternalLink } from 'lucide-react';
 
 interface RegistroEvento {
     id: string;
@@ -8,7 +8,7 @@ interface RegistroEvento {
     subsistema: string;
     horometro: number | string;
     tecnico: string;
-    tipoTrabajo: string; // ✅ Mantenemos la propiedad
+    tipoTrabajo: string;
 }
 
 export const TablaEventos = ({ registros, cargando, onVerDetalle }: any) => {
@@ -21,112 +21,103 @@ export const TablaEventos = ({ registros, cargando, onVerDetalle }: any) => {
         return `${partes[2]}/${partes[1]}/${partes[0]}`;
     };
 
-    // ✅ Función para colores dinámicos del Tipo de Trabajo
+    // ✅ Colores semánticos estándar de SAP Fiori
     const getEstiloTipo = (tipo: string) => {
         const t = tipo?.toUpperCase();
-        if (t === 'CORRECTIVO') return 'bg-red-50 text-red-600 border-red-100';
-        if (t === 'PREVENTIVO') return 'bg-amber-50 text-amber-600 border-amber-100';
-        if (t === 'INSPECCION' || t === 'INSPECCIÓN') return 'bg-blue-50 text-blue-600 border-blue-100';
-        return 'bg-slate-50 text-slate-600 border-slate-100';
+        if (t.includes('CORRECTIVO') || t.includes('ACCIDENTE')) return 'bg-[#fff4f4] text-[#bb0000] border-[#ffbbbb]'; // Error/Negative
+        if (t.includes('PREVENTIVO') || t.includes('PROGRAMADO')) return 'bg-[#fff8f0] text-[#e6600d] border-[#f3d3b6]'; // Warning/Critical
+        if (t.includes('INSPECCION') || t.includes('INSPECCIÓN')) return 'bg-[#f5faff] text-[#0064d1] border-[#b0ccf0]'; // Information/Neutral
+        return 'bg-[#f4f4f4] text-[#6a6d70] border-[#d3d7d9]';
     };
 
     if (cargando) return (
-        <div className="flex flex-col items-center justify-center py-24 space-y-4">
-            <div className="relative">
-                <div className="h-12 w-12 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"></div>
-                <Activity className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-blue-600" size={20} />
-            </div>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Sincronizando registros...</p>
+        <div className="flex flex-col items-center justify-center py-20 space-y-3 bg-white">
+            <div className="h-10 w-10 border-4 border-[#ebedee] border-t-[#0070b1] rounded-full animate-spin"></div>
+            <p className="text-[11px] font-bold text-[#6a6d70] uppercase tracking-wider">Cargando datos maestros...</p>
         </div>
     );
 
     return (
-        <div className="overflow-x-auto">
-            <table className="w-full border-separate border-spacing-y-3 px-2">
+        <div className="overflow-x-auto bg-white border border-[#d3d7d9]">
+            <table className="w-full border-collapse text-left">
                 <thead>
-                    <tr className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">
-                        <th className="px-6 py-4 text-left">
+                    <tr className="bg-[#f2f4f5] border-b border-[#d3d7d9] text-[10px] font-bold text-[#6a6d70] uppercase tracking-tight">
+                        <th className="px-4 py-3 border-r border-[#d3d7d9] w-28">
                             <div className="flex items-center gap-2"><Calendar size={12} /> Fecha</div>
                         </th>
-                        <th className="px-6 py-4 text-left">
-                            <div className="flex items-center gap-2"><Hash size={12} /> Unidad</div>
+                        <th className="px-4 py-3 border-r border-[#d3d7d9] w-32">
+                            <div className="flex items-center gap-2"><Hash size={12} /> Objeto Tecn.</div>
                         </th>
-                        <th className="px-6 py-4 text-left">
-                            <div className="flex items-center gap-2"><Wrench size={12} /> Sistema / Componente</div>
+                        <th className="px-4 py-3 border-r border-[#d3d7d9]">
+                            <div className="flex items-center gap-2"><Wrench size={12} /> Sistema / Conjunto</div>
                         </th>
-                        {/* ✅ NUEVA COLUMNA: TIPO */}
-                        <th className="px-6 py-4 text-left">
-                            <div className="flex items-center gap-2"><Activity size={12} /> Tipo</div>
+                        <th className="px-4 py-3 border-r border-[#d3d7d9] w-40">
+                            <div className="flex items-center gap-2"><Activity size={12} /> Categoría</div>
                         </th>
-                        <th className="px-6 py-4 text-left">
-                            <div className="flex items-center gap-2"><Activity size={12} /> Uso</div>
+                        <th className="px-4 py-3 border-r border-[#d3d7d9] w-28 text-right">
+                            <div className="flex items-center justify-end gap-2"><Activity size={12} /> Lectura</div>
                         </th>
-                        <th className="px-6 py-4 text-right">Acción</th>
+                        <th className="px-4 py-3 w-20 text-center text-[#0070b1]">Acción</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-[#ebeef0]">
                     {registros.length === 0 ? (
                         <tr>
-                            <td colSpan={6} className="text-center py-20">
-                                <p className="text-xs font-bold text-slate-300 uppercase tracking-widest">No hay registros disponibles</p>
+                            <td colSpan={6} className="text-center py-16">
+                                <p className="text-xs font-medium text-[#6a6d70] italic">No se han encontrado documentos para los criterios seleccionados</p>
                             </td>
                         </tr>
                     ) : (
                         registros.map((item: RegistroEvento) => (
                             <tr
                                 key={item.id}
-                                className="group bg-white hover:bg-slate-50/50 transition-all duration-300 shadow-[0_1px_3px_rgba(0,0,0,0.02)]"
+                                className="group hover:bg-[#f7f9fa] transition-colors duration-150"
                             >
-                                <td className="px-6 py-4 first:rounded-l-[1.2rem] border-y border-l border-slate-100 group-hover:border-blue-200 relative overflow-hidden">
-                                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500 opacity-0 group-hover:opacity-100 transition-all"></div>
-                                    <span className="text-xs font-bold text-slate-600">
+                                <td className="px-4 py-2 border-r border-[#ebeef0]">
+                                    <span className="text-[11px] font-mono text-[#32363a]">
                                         {formatearFechaSinSalto(item.fecha_evento)}
                                     </span>
                                 </td>
 
-                                <td className="px-6 py-4 border-y border-slate-100 group-hover:border-blue-200">
-                                    <span className="inline-flex items-center justify-center px-3 py-1 bg-slate-900 text-white rounded-lg text-[10px] font-black tracking-wider shadow-sm">
+                                <td className="px-4 py-2 border-r border-[#ebeef0]">
+                                    <span className="text-[11px] font-bold text-[#0070b1] hover:underline cursor-default">
                                         {item.placa}
                                     </span>
                                 </td>
 
-                                <td className="px-6 py-4 border-y border-slate-100 group-hover:border-blue-200">
-                                    <div className="flex flex-col">
-                                        <span className="text-[11px] font-black text-slate-800 uppercase leading-none mb-1">
+                                <td className="px-4 py-2 border-r border-[#ebeef0]">
+                                    <div className="flex flex-col leading-tight">
+                                        <span className="text-[11px] font-bold text-[#32363a] uppercase">
                                             {item.sistema}
                                         </span>
-                                        <span className="text-[10px] font-medium text-blue-500/80 italic tracking-tight">
+                                        <span className="text-[10px] text-[#6a6d70] italic">
                                             {item.subsistema || 'General'}
                                         </span>
                                     </div>
                                 </td>
 
-                                {/* ✅ CELDA NUEVA: TIPO DE TRABAJO */}
-                                <td className="px-6 py-4 border-y border-slate-100 group-hover:border-blue-200">
-                                    <span className={`px-2 py-1 rounded-md text-[9px] font-black border uppercase tracking-tighter ${getEstiloTipo(item.tipoTrabajo)}`}>
+                                <td className="px-4 py-2 border-r border-[#ebeef0]">
+                                    <span className={`inline-block px-2 py-0.5 rounded-sm text-[9px] font-bold border uppercase tracking-tight ${getEstiloTipo(item.tipoTrabajo)}`}>
                                         {item.tipoTrabajo || '---'}
                                     </span>
                                 </td>
 
-                                <td className="px-6 py-4 border-y border-slate-100 group-hover:border-blue-200">
-                                    <div className="flex flex-col gap-1">
-                                        <div className="flex items-baseline gap-1">
-                                            <span className="text-xs font-black text-slate-700">{item.horometro}</span>
-                                            <span className="text-[9px] font-bold text-slate-400">HRS</span>
-                                        </div>
-                                        <div className="w-12 h-1 bg-slate-100 rounded-full overflow-hidden">
-                                            <div className="h-full bg-blue-400 w-2/3"></div>
-                                        </div>
+                                <td className="px-4 py-2 border-r border-[#ebeef0] text-right">
+                                    <div className="flex flex-col items-end">
+                                        <span className="text-[11px] font-mono font-bold text-[#32363a]">
+                                            {item.horometro}
+                                        </span>
+                                        <span className="text-[8px] font-bold text-[#6a6d70]">HRS</span>
                                     </div>
                                 </td>
 
-                                <td className="px-6 py-4 last:rounded-r-[1.2rem] border-y border-r border-slate-100 group-hover:border-blue-200 text-right">
+                                <td className="px-2 py-2 text-center">
                                     <button
                                         onClick={() => onVerDetalle(item)}
-                                        className="inline-flex items-center gap-2 px-4 py-2 bg-slate-50 text-slate-500 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition-all duration-300 shadow-sm active:scale-95"
+                                        className="p-1.5 text-[#0070b1] hover:bg-[#e7f0f7] border border-transparent hover:border-[#b0ccf0] rounded-sm transition-all active:bg-[#d0e1f3]"
+                                        title="Abrir detalles del documento"
                                     >
-                                        <span className="text-[10px] font-black uppercase tracking-tighter hidden sm:block">Ver Ficha</span>
-                                        <ChevronRight size={16} />
+                                        <ExternalLink size={16} />
                                     </button>
                                 </td>
                             </tr>
@@ -134,6 +125,11 @@ export const TablaEventos = ({ registros, cargando, onVerDetalle }: any) => {
                     )}
                 </tbody>
             </table>
+            {/* Footer técnico SAP */}
+            <div className="bg-[#f2f4f5] px-4 py-1 border-t border-[#d3d7d9] flex justify-between items-center text-[9px] font-bold text-[#6a6d70] uppercase">
+                <span>Total de registros: {registros.length}</span>
+                <span>Sistema Cloud Synchronized</span>
+            </div>
         </div>
     );
 };

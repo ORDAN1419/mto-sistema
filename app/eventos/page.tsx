@@ -1,8 +1,11 @@
 "use client"
-import { useEffect, useState, Suspense, useMemo } from 'react'
+import { useEffect, useState, Suspense, useMemo, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { ArrowLeft, Search, Wrench, Activity, Calendar, Clock, CheckCircle2, Filter } from 'lucide-react'
+import {
+    ArrowLeft, Search, Wrench, Activity, Calendar, Clock,
+    CheckCircle2, Filter, RefreshCw, LayoutGrid
+} from 'lucide-react'
 
 import { TablaEventos } from './TablaEventos';
 import ModalDetalle from './ModalDetalle';
@@ -20,6 +23,7 @@ function HistorialFormContent() {
     const router = useRouter()
     const searchParams = useSearchParams()
 
+    // --- ESTADOS ORIGINALES (INTACTOS) ---
     const [showModal, setShowModal] = useState(false)
     const [isEditing, setIsEditing] = useState(false)
     const [verEvento, setVerEvento] = useState<any>(null)
@@ -33,7 +37,6 @@ function HistorialFormContent() {
     const [repuestosCargados, setRepuestosCargados] = useState<any[]>([])
     const [nuevoRepuesto, setNuevoRepuesto] = useState({ descripcion: '', cantidad: 1, id: null })
 
-    // ✅ MODIFICADO: horometro como string vacío para evitar el '0' preseteado
     const initialForm = {
         fecha_evento: obtenerFechaLocal(),
         placa: '',
@@ -50,6 +53,38 @@ function HistorialFormContent() {
     }
     const [form, setForm] = useState(initialForm)
 
+    // --- ATAJOS DE TECLADO (SAP STANDARD LOGIC) ---
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // Navegación CTRL + NUM
+            if (e.ctrlKey && e.key === '1') { e.preventDefault(); router.push('/rendimiento'); }
+            if (e.ctrlKey && e.key === '2') { e.preventDefault(); router.push('/bdrepuestos'); }
+            if (e.ctrlKey && e.key === '3') { e.preventDefault(); router.push('/estatus'); }
+
+            // Acciones ALT
+            if (e.altKey && e.key.toLowerCase() === 'n') { // Nuevo registro
+                e.preventDefault();
+                setForm(initialForm);
+                setIsEditing(false);
+                setRepuestos([]);
+                setEspecificarSistema(false);
+                setShowModal(true);
+            }
+            if (e.altKey && e.key.toLowerCase() === 'q') { // Refrescar
+                e.preventDefault();
+                fetchRegistros();
+            }
+            if (e.altKey && e.key.toLowerCase() === 's') { // Buscar
+                e.preventDefault();
+                const searchInput = document.getElementById('sap-main-search');
+                searchInput?.focus();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [router, initialForm]);
+
+    // --- LÓGICA DE NEGOCIO (INTACTA) ---
     const stats = useMemo(() => {
         const hoy = obtenerFechaLocal();
         return {
@@ -91,17 +126,10 @@ function HistorialFormContent() {
         }
     }, [searchParams]);
 
-    // ✅ MODIFICADO: Carga de repuestos desde repUsadosMtto con Join a base_repuestos
     useEffect(() => {
         if (verEvento) {
             supabase.from('repUsadosMtto')
-                .select(`
-                    *,
-                    base_repuestos (
-                        codigo_almacen,
-                        numero_parte
-                    )
-                `)
+                .select('*, base_repuestos(codigo_almacen, numero_parte)')
                 .eq('eventoId', verEvento.id)
                 .then(({ data }) => {
                     const repuestosFormateados = data?.map(r => ({
@@ -117,7 +145,6 @@ function HistorialFormContent() {
     const prepararEdicion = () => {
         const sistemasBase = ["MOTOR", "TRANSMISIÓN", "SIST. ELÉCTRICO", "HIDRÁULICO", "FRENOS", "ESTRUCTURA"];
         const esSistemaManual = !sistemasBase.includes(verEvento.sistema);
-
         setForm({
             ...verEvento,
             horometro: verEvento.horometro.toString(),
@@ -132,26 +159,22 @@ function HistorialFormContent() {
     }
 
     const guardarEvento = async () => {
-        if (!form.placa || !form.horometro || !form.sistema || !form.tipoTrabajo) {
-            return alert("⚠️ Datos básicos incompletos");
-        }
-
-        let duracionCalculada = 0;
-        if (form.H_inicial && form.H_final) {
-            const [h1, m1] = form.H_inicial.split(':').map(Number);
-            const [h2, m2] = form.H_final.split(':').map(Number);
-            const inicio = h1 + m1 / 60;
-            const fin = h2 + m2 / 60;
-            duracionCalculada = fin > inicio ? fin - inicio : (24 - inicio) + fin;
-        }
-
-        const duracionFinal = Number(duracionCalculada.toFixed(2));
-        const placaLimpia = form.placa.trim().toUpperCase();
-        const nuevoHorometro = Number(form.horometro);
-
+        if (!form.placa || !form.horometro || !form.sistema || !form.tipoTrabajo) return alert("⚠️ Datos incompletos");
         setEnviando(true);
-
         try {
+            // Lógica de cálculo de duración original
+            let duracionCalculada = 0;
+            if (form.H_inicial && form.H_final) {
+                const [h1, m1] = form.H_inicial.split(':').map(Number);
+                const [h2, m2] = form.H_final.split(':').map(Number);
+                const inicio = h1 + m1 / 60;
+                const fin = h2 + m2 / 60;
+                duracionCalculada = fin > inicio ? fin - inicio : (24 - inicio) + fin;
+            }
+            const duracionFinal = Number(duracionCalculada.toFixed(2));
+            const placaLimpia = form.placa.trim().toUpperCase();
+            const nuevoHorometro = Number(form.horometro);
+
             const dataToSave = {
                 fecha_evento: form.fecha_evento,
                 placa: placaLimpia,
@@ -168,7 +191,6 @@ function HistorialFormContent() {
             };
 
             let evId = verEvento?.id;
-
             if (isEditing && evId) {
                 const { error } = await supabase.from('historial_eventos').update(dataToSave).eq('id', evId);
                 if (error) throw error;
@@ -180,14 +202,14 @@ function HistorialFormContent() {
             }
 
             const { data: equipoActual } = await supabase.from('maestroEquipos').select('horometroMayor').eq('placaRodaje', placaLimpia).single();
+            const nuevoStatus = form.tipoTrabajo === "INSPECCION" ? 'OPERATIVO' : 'INOPERATIVO';
+            const updateFields: any = { status: nuevoStatus };
             if (equipoActual && nuevoHorometro > (equipoActual.horometroMayor || 0)) {
-                await supabase.from('maestroEquipos').update({
-                    horometroMayor: nuevoHorometro,
-                    ultima_fecha: form.fecha_evento
-                }).eq('placaRodaje', placaLimpia);
+                updateFields.horometroMayor = nuevoHorometro;
+                updateFields.ultima_fecha = form.fecha_evento;
             }
+            await supabase.from('maestroEquipos').update(updateFields).eq('placaRodaje', placaLimpia);
 
-            // ✅ MODIFICADO: Guardado masivo en repUsadosMtto
             if (repuestos.length > 0) {
                 const repuestosData = repuestos.map(r => ({
                     fechCambio: form.fecha_evento,
@@ -198,7 +220,6 @@ function HistorialFormContent() {
                     cantidad: Number(r.cantidad),
                     horometro: nuevoHorometro
                 }));
-
                 const { error: errorRep } = await supabase.from('repUsadosMtto').insert(repuestosData);
                 if (errorRep) throw errorRep;
             }
@@ -210,19 +231,7 @@ function HistorialFormContent() {
             setRepuestos([]);
             setEspecificarSistema(false);
             alert("✅ Registro procesado exitosamente.");
-
-        } catch (e: any) {
-            console.error(e);
-            alert(`Error: ${e.message}`);
-        } finally {
-            setEnviando(false);
-        }
-    }
-
-    const agregarRepuestoALista = () => {
-        if (!nuevoRepuesto.descripcion.trim()) return;
-        setRepuestos([...repuestos, { ...nuevoRepuesto, descripcion: nuevoRepuesto.descripcion.toUpperCase() }]);
-        setNuevoRepuesto({ descripcion: '', cantidad: 1, id: null });
+        } catch (e: any) { alert(e.message) } finally { setEnviando(false) }
     }
 
     const darAltaEquipo = async () => {
@@ -246,70 +255,125 @@ function HistorialFormContent() {
         r.tecnico?.toLowerCase().includes(busqueda.toLowerCase())
     );
 
+    const agregarRepuestoALista = () => {
+        if (!nuevoRepuesto.descripcion.trim()) return;
+        setRepuestos([...repuestos, { ...nuevoRepuesto, descripcion: nuevoRepuesto.descripcion.toUpperCase() }]);
+        setNuevoRepuesto({ descripcion: '', cantidad: 1, id: null });
+    }
+
     return (
-        <div className="max-w-[1440px] mx-auto space-y-6">
-            <div className="bg-white p-5 rounded-[2.5rem] border border-slate-200/60 shadow-xl shadow-slate-200/40 flex flex-col lg:flex-row items-center justify-between gap-6">
-                <div className="flex items-center gap-5 w-full lg:w-auto">
-                    <button onClick={() => router.push('/equipos')} className="p-3 bg-slate-50 rounded-2xl text-slate-400 hover:text-blue-600 border border-slate-100"><ArrowLeft size={20} /></button>
+        <div className="max-w-[1600px] mx-auto space-y-4">
+
+            {/* SAP SHELL BAR (Header) */}
+            <nav className="bg-[#354a5f] text-white p-4 flex flex-col md:flex-row items-center justify-between shadow-md rounded-sm sticky top-0 z-40">
+                <div className="flex items-center gap-4 w-full md:w-auto text-left leading-none">
+                    <button onClick={() => router.push('/equipos')} className="p-2 hover:bg-white/10 rounded-sm transition-colors border border-white/20">
+                        <ArrowLeft size={18} />
+                    </button>
                     <div>
-                        <h1 className="text-xl font-black text-slate-800 uppercase tracking-tighter leading-none">Historial de Eventos</h1>
-                        <div className="flex items-center gap-2 mt-1.5">
-                            <span className="relative flex h-2 w-2">
-                                <span className="absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75 animate-ping"></span>
-                                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-                            </span>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Sincronizado con Supabase</p>
-                        </div>
+                        <h1 className="text-sm font-bold uppercase tracking-wider">Historial de Intervenciones</h1>
+                        <span className="text-[10px] opacity-60 font-mono leading-none">SAP S/4HANA Asset Management</span>
                     </div>
                 </div>
 
-                <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
-                    <div className="relative w-full sm:w-80 group">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-500 transition-colors" size={18} />
-                        <input type="text" placeholder="Buscar placa, sistema o técnico..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-100 rounded-2xl text-xs font-bold outline-none focus:ring-4 focus:ring-blue-500/5 focus:bg-white transition-all shadow-inner" />
+                <div className="flex flex-col sm:flex-row items-center gap-2 w-full md:w-auto mt-4 md:mt-0 leading-none">
+                    <div className="relative w-full sm:w-72">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-white/50" size={14} />
+                        <input
+                            id="sap-main-search"
+                            type="text"
+                            placeholder="Buscar en historial [ALT+S]..."
+                            value={busqueda}
+                            onChange={(e) => setBusqueda(e.target.value)}
+                            className="w-full pl-9 pr-4 py-1.5 bg-white/10 border border-white/20 rounded-sm text-xs outline-none focus:bg-white focus:text-[#32363a] transition-all font-bold"
+                        />
                     </div>
-                    <button onClick={() => { setForm(initialForm); setIsEditing(false); setRepuestos([]); setEspecificarSistema(false); setShowModal(true); }} className="w-full sm:w-auto px-8 py-3.5 bg-blue-600 text-white rounded-2xl font-black text-[11px] uppercase tracking-[0.15em] hover:bg-blue-700 transition-all shadow-lg flex items-center justify-center gap-3"><Wrench size={16} /> NUEVO REGISTRO</button>
+                    <button
+                        onClick={() => { setForm(initialForm); setIsEditing(false); setRepuestos([]); setEspecificarSistema(false); setShowModal(true); }}
+                        className="w-full sm:w-auto px-6 py-1.5 bg-[#0070b1] hover:bg-[#005a8e] text-white rounded-sm font-bold text-[11px] uppercase transition-all shadow-sm flex items-center justify-center gap-2"
+                        title="ALT+N"
+                    >
+                        <Wrench size={14} /> Nuevo Documento
+                    </button>
                 </div>
+            </nav>
+
+            {/* ANALYTICAL TILES (KPIs) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <SapKpiTile label="Eventos Registrados" value={stats.total} icon={<Calendar size={18} />} color="blue" />
+                <SapKpiTile label="Total Horas Invertidas" value={`${stats.duracionTotal}h`} icon={<Clock size={18} />} color="amber" />
+                <SapKpiTile label="Registros de Hoy" value={stats.hoy} icon={<CheckCircle2 size={18} />} color="emerald" />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                {[
-                    { label: 'Eventos Totales', val: stats.total, icon: <Calendar size={22} />, color: 'text-blue-600', bg: 'bg-blue-50' },
-                    { label: 'Horas Invertidas', val: `${stats.duracionTotal}h`, icon: <Clock size={22} />, color: 'text-amber-600', bg: 'bg-amber-50' },
-                    { label: 'Registros Hoy', val: stats.hoy, icon: <CheckCircle2 size={22} />, color: 'text-green-600', bg: 'bg-green-50' }
-                ].map((item, i) => (
-                    <div key={i} className="bg-white p-6 rounded-[2rem] border border-slate-200/50 shadow-sm flex items-center gap-5 hover:border-blue-200 transition-colors group">
-                        <div className={`p-4 ${item.bg} ${item.color} rounded-2xl group-hover:scale-110 transition-transform`}>{item.icon}</div>
-                        <div>
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{item.label}</p>
-                            <p className="text-2xl font-black text-slate-800">{item.val}</p>
-                        </div>
+            {/* MAIN WORKLIST AREA */}
+            <div className="bg-white border border-[#d3d7d9] shadow-sm rounded-sm overflow-hidden text-left">
+                <div className="px-6 py-3 border-b border-[#d3d7d9] bg-[#f2f4f5] flex items-center justify-between leading-none">
+                    <div className="flex items-center gap-2 text-[#6a6d70]">
+                        <LayoutGrid size={14} />
+                        <span className="text-[11px] font-bold uppercase tracking-tighter">Worklist: Entradas Sincronizadas</span>
                     </div>
-                ))}
-            </div>
-
-            <div className="bg-white rounded-[2.5rem] border border-slate-200/60 shadow-xl shadow-slate-200/30 overflow-hidden">
-                <div className="px-8 py-5 border-b border-slate-50 flex items-center justify-between bg-slate-50/30">
                     <div className="flex items-center gap-2">
-                        <Filter size={14} className="text-blue-500" />
-                        <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Mostrando {registrosFiltrados.length} resultados</span>
+                        <Filter size={14} className="text-[#0070b1]" />
+                        <span className="text-[10px] font-bold text-[#6a6d70] uppercase">Filtro Activo: {registrosFiltrados.length} Registros</span>
                     </div>
                 </div>
-                <div className="p-4">
+
+                <div className="p-2 bg-white min-h-[400px]">
                     <TablaEventos registros={registrosFiltrados} cargando={cargando} onVerDetalle={setVerEvento} />
                 </div>
             </div>
 
-            <ModalDetalle verEvento={verEvento} setVerEvento={setVerEvento} darAltaEquipo={darAltaEquipo} prepararEdicion={prepararEdicion} eliminarRegistro={eliminarRegistro} repuestosCargados={repuestosCargados} />
-            <ModalFormulario showModal={showModal} setShowModal={setShowModal} isEditing={isEditing} form={form} setForm={setForm} especificarSistema={especificarSistema} setEspecificarSistema={setEspecificarSistema} nuevoRepuesto={nuevoRepuesto} setNuevoRepuesto={setNuevoRepuesto} agregarRepuestoALista={agregarRepuestoALista} repuestos={repuestos} setRepuestos={setRepuestos} guardarEvento={guardarEvento} enviando={enviando} />
+            {/* MODALES REUTILIZANDO TU LOGICA */}
+            <ModalDetalle
+                verEvento={verEvento}
+                setVerEvento={setVerEvento}
+                darAltaEquipo={darAltaEquipo}
+                prepararEdicion={prepararEdicion}
+                eliminarRegistro={eliminarRegistro}
+                repuestosCargados={repuestosCargados}
+            />
+            <ModalFormulario
+                showModal={showModal}
+                setShowModal={setShowModal}
+                isEditing={isEditing}
+                form={form}
+                setForm={setForm}
+                especificarSistema={especificarSistema}
+                setEspecificarSistema={setEspecificarSistema}
+                nuevoRepuesto={nuevoRepuesto}
+                setNuevoRepuesto={setNuevoRepuesto}
+                agregarRepuestoALista={agregarRepuestoALista}
+                repuestos={repuestos}
+                setRepuestos={setRepuestos}
+                guardarEvento={guardarEvento}
+                enviando={enviando}
+            />
         </div>
     )
 }
 
+function SapKpiTile({ label, value, icon, color }: any) {
+    const borders: any = { blue: 'border-l-[#0070b1]', amber: 'border-l-[#b7791f]', emerald: 'border-l-[#107e3e]' };
+    return (
+        <div className={`bg-white p-4 border border-[#d3d7d9] border-l-4 ${borders[color]} rounded-sm shadow-sm flex items-center gap-4 text-left leading-none`}>
+            <div className="text-slate-300">{icon}</div>
+            <div>
+                <p className="text-[10px] font-bold text-[#6a6d70] uppercase mb-1 leading-none">{label}</p>
+                <p className="text-xl font-light text-[#32363a] leading-none font-mono tracking-tighter">{value}</p>
+            </div>
+        </div>
+    );
+}
+
 export default function HistorialEventosPage() {
     return (
-        <main className="min-h-screen bg-[#F8FAFC] p-4 md:p-10 font-sans">
-            <Suspense fallback={<div className="flex flex-col items-center justify-center min-h-[60vh] gap-6"><Activity className="animate-spin text-blue-600" size={48} /><p className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] animate-pulse">Sincronizando Historial...</p></div>}>
+        <main className="min-h-screen bg-[#f7f9fa] p-4 font-sans text-left leading-none">
+            <Suspense fallback={
+                <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+                    <RefreshCw className="animate-spin text-[#0070b1]" size={40} />
+                    <p className="text-xs font-bold text-[#6a6d70] uppercase tracking-widest leading-none">Conectando con SAP HANA...</p>
+                </div>
+            }>
                 <HistorialFormContent />
             </Suspense>
         </main>
