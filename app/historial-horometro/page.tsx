@@ -40,6 +40,7 @@ interface EquipoEstado {
   desface: number | null;
   status: string | null;
   obs: string;
+  // KPIs calculados
   disponibilidad?: number;
   tpef?: number;
   tppr?: number;
@@ -101,7 +102,7 @@ export default function EstadoGeneralPage() {
     setHistorialModal(data || [])
   }
 
-  // ✅ REPORTE MURAL: FILTRADO ESTRICTO (Negativos y Positivos != 0)
+  // ✅ REPORTE MURAL: FILTRADO ESTRICTO
   const exportarPDFMural = async () => {
     const unidadesCriticas = equipos
       .filter(e => e.desface !== null && e.desface !== 0)
@@ -151,18 +152,13 @@ export default function EstadoGeneralPage() {
     setGenerandoPDF(false);
   };
 
-  // ✅ LOGICA DE KPIs CORREGIDA PARA IGNORAR NULLs
   const kpiSalud = useMemo(() => {
-    // Solo tomamos en cuenta equipos que TIENEN dato de desfase
     const equiposGestionados = equipos.filter(e => e.desface !== null);
     const totalGestionados = equiposGestionados.length;
-
     if (totalGestionados === 0) return { saludable: 0, cumplimiento: 0, confiabilidad: 0, vencidos: 0 };
-
     const saludables = equiposGestionados.filter(e => e.desface! > 24).length;
     const vencidos = equiposGestionados.filter(e => e.desface! <= 0).length;
     const operativos = equipos.filter(e => e.status?.toLowerCase() === 'operativo').length;
-
     return {
       saludable: Math.round((saludables / totalGestionados) * 100),
       cumplimiento: Math.round(((totalGestionados - vencidos) / totalGestionados) * 100),
@@ -174,15 +170,12 @@ export default function EstadoGeneralPage() {
   const equiposAgrupados = useMemo(() => {
     const filtrados = equipos.filter(e => {
       let pasaKPI = true;
-      // ✅ Filtros de botones también ignoran NULLs
       if (filtroKPI === 'SALUDABLE') pasaKPI = e.desface !== null && e.desface > 24;
       if (filtroKPI === 'CUMPLIMIENTO') pasaKPI = e.desface !== null && e.desface > 0;
       if (filtroKPI === 'RIESGO') pasaKPI = e.desface !== null && e.desface <= 0;
-
       const txt = busqueda.toLowerCase();
       return pasaKPI && (!busqueda || e.placaRodaje?.toLowerCase().includes(txt) || e.codigoEquipo?.toLowerCase().includes(txt));
     });
-
     const grupos: Record<string, EquipoEstado[]> = {};
     filtrados.filter(e => e.desface !== null).forEach(eq => {
       const cat = (eq.descripcionEquipo || 'OTROS').toUpperCase();
@@ -197,13 +190,8 @@ export default function EstadoGeneralPage() {
     if (!equipoSeleccionado) return;
     const hInicio = Number(form.inicio);
     const hFinal = Number(form.final);
-
-    if (!form.final || hFinal <= hInicio) {
-      alert("La nueva lectura debe ser mayor a la anterior");
-      return;
-    }
+    if (!form.final || hFinal <= hInicio) { alert("La nueva lectura debe ser mayor a la anterior"); return; }
     setEnviando(true)
-
     try {
       const ts = new Date().toISOString();
       await supabase.from('horometro').insert([{ placaRodaje: equipoSeleccionado.placaRodaje, horaInicio: hInicio, horaFinal: hFinal, horasOperacion: hFinal - hInicio, horometroMayor: hFinal, created_at: ts }]);
@@ -217,11 +205,6 @@ export default function EstadoGeneralPage() {
 
   const abrirModal = (equipo: EquipoEstado) => {
     setEquipoSeleccionado(equipo)
-    setForm({
-      inicio: equipo.horometroMayor?.toString() || '0',
-      final: '',
-      fecha: obtenerFechaHoyLocal()
-    })
   }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-white"><Loader2 className="animate-spin text-blue-600" size={32} /></div>
@@ -229,7 +212,6 @@ export default function EstadoGeneralPage() {
   return (
     <main className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans p-2">
       <div className="max-w-[1700px] mx-auto space-y-4">
-
         <nav className="flex justify-between items-center bg-white p-4 rounded-3xl border border-slate-100 shadow-sm">
           <div className="flex items-center gap-4">
             <button onClick={() => router.back()} className="p-2 text-slate-400 hover:text-blue-600 transition-all"><ArrowLeft size={20} /></button>
@@ -260,7 +242,7 @@ export default function EstadoGeneralPage() {
           </div>
           <div className="p-3 grid grid-cols-2 gap-3 bg-slate-50/20 max-h-[calc(100vh-200px)] overflow-y-auto">
             {Object.entries(equiposAgrupados).map(([descripcion, lista]) => (
-              <div key={descripcion} className="bg-white p-3 rounded-[1.5rem] border border-slate-100">
+              <div key={descripcion} className="bg-white p-3 rounded-[1.5rem] border border-slate-100 shadow-sm">
                 <h3 className="text-[9px] font-black text-slate-400 uppercase mb-2 flex items-center gap-2 leading-none"><Box size={10} className="text-blue-500" /> {descripcion}</h3>
                 <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-1">
                   {lista.map(eq => {
@@ -282,6 +264,8 @@ export default function EstadoGeneralPage() {
       {equipoSeleccionado && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-md bg-slate-900/40">
           <div className="relative bg-white w-full max-w-4xl rounded-[3rem] shadow-2xl border border-slate-100 flex flex-col md:flex-row overflow-hidden animate-in zoom-in-95 duration-200">
+
+            {/* LADO IZQUIERDO: EL MISMO CARD MAESTRO + INFO MP */}
             <div className="w-full md:w-1/2 p-10 bg-slate-50/50 border-r border-slate-100">
               <div className="flex justify-between items-start mb-6">
                 <div className="space-y-1">
@@ -290,30 +274,50 @@ export default function EstadoGeneralPage() {
                 </div>
                 <button onClick={() => setEquipoSeleccionado(null)} className="md:hidden text-slate-300"><X /></button>
               </div>
+
+              {/* INFO DE MANTENIMIENTO INTEGRADA */}
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div className="p-4 bg-white rounded-3xl border border-slate-100 shadow-sm text-center">
+                  <p className="text-[8px] font-black text-blue-500 uppercase mb-1 flex items-center justify-center gap-1"><Target size={10} /> Próximo MP</p>
+                  <p className="text-lg font-black text-slate-700 font-mono italic">{equipoSeleccionado.ProxHoroKmMp || '---'}</p>
+                  <p className="text-[7px] font-bold text-slate-400 uppercase mt-0.5">{equipoSeleccionado.tipoProxMp}</p>
+                </div>
+                <div className={`p-4 rounded-3xl border shadow-sm text-center ${equipoSeleccionado.desface! <= 0 ? 'bg-rose-50 border-rose-100' : 'bg-emerald-50 border-emerald-100'}`}>
+                  <p className={`text-[8px] font-black uppercase mb-1 ${equipoSeleccionado.desface! <= 0 ? 'text-rose-500' : 'text-emerald-500'}`}>Horas Restantes</p>
+                  <p className={`text-lg font-black font-mono ${equipoSeleccionado.desface! <= 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{equipoSeleccionado.desface?.toFixed(1)}</p>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-4 mb-6">
                 <MetricBox label="Horómetro" value={equipoSeleccionado.horometroMayor || 0} sub={equipoSeleccionado.ultima_fecha || '---'} icon={<Activity size={14} />} />
                 <MetricBox label="Disponibilidad" value={`${equipoSeleccionado.disponibilidad?.toFixed(1)}%`} sub={equipoSeleccionado.status || '---'} icon={<ShieldCheck size={14} />} critical={equipoSeleccionado.disponibilidad! < 85} />
               </div>
+
               <div className="grid grid-cols-2 gap-3 mb-6">
                 <MiniMetric label="TPEF" value={equipoSeleccionado.tpef?.toFixed(1) || '0'} icon={<Clock size={12} />} color="blue" />
                 <MiniMetric label="TPPR" value={equipoSeleccionado.tppr?.toFixed(1) || '0'} icon={<Wrench size={12} />} color="amber" />
               </div>
+
               <div className="grid grid-cols-2 gap-y-4 text-[11px] mb-6 bg-white p-6 rounded-[2rem] border border-slate-100">
                 <DataField label="Modelo" value={`${equipoSeleccionado.marca} ${equipoSeleccionado.modelo}`} />
                 <DataField label="Serie" value={equipoSeleccionado.serieMotor} mono />
                 <DataField label="Ubicación" value={equipoSeleccionado.ubic} icon={<MapPin size={12} className="text-blue-500" />} />
                 <DataField label="Proyecto" value={equipoSeleccionado.proyecto} />
               </div>
-              <button onClick={() => router.push(`/eventos?placa=${equipoSeleccionado.placaRodaje}`)} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-blue-600 transition-all">
+
+              <button onClick={() => router.push(`/eventos?placa=${equipoSeleccionado.placaRodaje}`)} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-blue-600 transition-all shadow-xl">
                 <Construction size={18} /> Registrar Intervención
               </button>
             </div>
+
+            {/* LADO DERECHO: FORMULARIO DE SINCRONIZACIÓN */}
             <div className="w-full md:w-1/2 p-10 relative bg-white flex flex-col justify-center">
               <button onClick={() => setEquipoSeleccionado(null)} className="hidden md:block absolute right-8 top-8 text-slate-300 hover:text-rose-500 transition-all"><X size={28} /></button>
               <div className="text-center mb-8">
                 <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-[1.5rem] flex items-center justify-center mx-auto mb-4 shadow-inner"><Gauge size={32} /></div>
                 <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest leading-none">Sincronización de Lectura</h4>
               </div>
+
               <div className="space-y-6">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Fecha de lectura</label>
