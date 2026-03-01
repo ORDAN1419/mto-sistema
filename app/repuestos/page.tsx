@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useRouter } from 'next/navigation';
 import {
     ChevronDown,
+    ChevronUp,
     Clock,
     Package,
     Search,
@@ -13,14 +15,15 @@ import {
     Plus,
     X,
     Save,
-    RefreshCw,
     Trash2,
     RotateCw,
     Pencil,
     Calendar,
     History,
     AlertCircle,
-    Wrench // ✅ Corregido: Ahora está importado
+    Wrench,
+    Database,
+    LayoutDashboard
 } from 'lucide-react';
 
 // --- TIPADOS ---
@@ -34,7 +37,7 @@ interface Repuesto {
     fecha_pedido: string;
     cantidad?: number;
     falla_general?: string;
-    es_servicio?: boolean; // ✅ Añadido para evitar errores de tipado en la tabla
+    es_servicio?: boolean;
 }
 
 interface GrupoEquipo {
@@ -52,7 +55,7 @@ interface MasterEquipo {
 }
 
 interface ItemFormulario {
-    id?: string; // ✅ El id es opcional para que funcione en creación y edición
+    id?: string;
     id_temp: string;
     codigoalmacen: string;
     codigo_repuesto: string;
@@ -63,6 +66,9 @@ interface ItemFormulario {
 }
 
 export default function SeguimientoRepuestosPage() {
+    const router = useRouter();
+    const inputBusquedaRef = useRef<HTMLInputElement>(null);
+
     // --- ESTADOS DE UI ---
     const [busqueda, setBusqueda] = useState('');
     const [todosAbiertos, setTodosAbiertos] = useState(false);
@@ -98,6 +104,37 @@ export default function SeguimientoRepuestosPage() {
         cantidad: 1,
         status: 'Creado'
     });
+
+    // ✅ NUEVO: LÓGICA DE ATAJOS DE TECLADO
+    useEffect(() => {
+        const manejarAtajos = (e: KeyboardEvent) => {
+            // CTRL + 0 -> Equipos
+            if (e.ctrlKey && e.key === '0') {
+                e.preventDefault();
+                router.push('/equipos');
+            }
+            // CTRL + 1 -> Historial Horómetro
+            if (e.ctrlKey && e.key === '1') {
+                e.preventDefault();
+                router.push('/historial-horometro');
+            }
+            // ALT + S -> Seleccionar Buscador
+            if (e.altKey && e.key.toLowerCase() === 's') {
+                e.preventDefault();
+                inputBusquedaRef.current?.focus();
+            }
+            // ALT + X -> Borrar filtros
+            if (e.altKey && e.key.toLowerCase() === 'x') {
+                e.preventDefault();
+                setBusqueda('');
+                setOcultarCompletados(false);
+                setMostrarHistorial(false);
+            }
+        };
+
+        window.addEventListener('keydown', manejarAtajos);
+        return () => window.removeEventListener('keydown', manejarAtajos);
+    }, [router]);
 
     const cargarDatos = useCallback(async () => {
         setLoading(true);
@@ -230,7 +267,6 @@ export default function SeguimientoRepuestosPage() {
                     criticidad: criticidadGeneral
                 };
 
-                // ✅ Corregido: Uso de casting para que TypeScript no marque error en el .id
                 const itemId = (item as any).id;
 
                 if (modoEdicion && itemId) {
@@ -257,63 +293,74 @@ export default function SeguimientoRepuestosPage() {
     };
 
     return (
-        <div className="min-h-screen bg-[#F8FAFC] p-4 md:p-8">
-            <div className="max-w-7xl mx-auto">
-                {/* HEADER */}
-                <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
-                    <div>
-                        <div className="flex items-center gap-3 mb-2">
-                            <div className="bg-blue-600 p-2 rounded-xl shadow-lg">
-                                <Package className="text-white" size={28} />
-                            </div>
-                            <h1 className="text-3xl font-black text-slate-800 tracking-tight">Seguimiento de Repuestos</h1>
-                        </div>
-                        <div className="flex items-center gap-3 ml-1">
-                            <div className={`w-2.5 h-2.5 rounded-full ${dbStatus === 'online' ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
-                            <p className="text-slate-500 font-black text-[10px] uppercase tracking-widest">
-                                {dbStatus === 'online' ? 'Base de datos en línea' : 'Error de Conexión'}
-                            </p>
-                        </div>
+        <main className="min-h-screen bg-[#f7f9fa] text-[#32363a] font-sans">
+            {/* --- SAP SHELL BAR --- */}
+            <nav className="bg-[#354a5f] text-white h-12 flex items-center px-4 justify-between shadow-md sticky top-0 z-50">
+                <div className="flex items-center gap-4">
+                    <div className="bg-[#0070b1] p-1.5 rounded-sm cursor-pointer hover:bg-[#005a8e]" onClick={() => router.push('/equipos')}>
+                        <LayoutDashboard size={18} className="text-white" />
+                    </div>
+                    <div className="flex flex-col leading-none text-left">
+                        <span className="font-bold text-xs tracking-tight uppercase">Logística: Seguimiento de Repuestos</span>
+                        <span className="text-[10px] opacity-60 font-mono uppercase tracking-tighter">S/4HANA Asset Management</span>
+                    </div>
+                </div>
+                <div className="flex items-center gap-4">
+                    <div className={`flex items-center gap-1.5 px-2 py-1 rounded-sm border ${dbStatus === 'online' ? 'border-green-500/30 bg-green-500/10' : 'border-red-500/30 bg-red-500/10'}`}>
+                        <div className={`w-2 h-2 rounded-full ${dbStatus === 'online' ? 'bg-green-500' : 'bg-red-500'} animate-pulse`} />
+                        <span className="text-[9px] font-bold uppercase">{dbStatus === 'online' ? 'En Línea' : 'Error Sync'}</span>
+                    </div>
+                    <button onClick={cargarDatos} className="hover:bg-white/10 p-2 rounded-sm transition-colors" title="Sincronizar [ALT+Q]">
+                        <RotateCw size={18} className={loading ? "animate-spin" : ""} />
+                    </button>
+                </div>
+            </nav>
+
+            <div className="max-w-[1600px] mx-auto p-4 md:p-6 space-y-4">
+                {/* --- BARRA DE HERRAMIENTAS (SAP TOOLBAR) --- */}
+                <div className="bg-white border border-[#d3d7d9] p-2 flex flex-col md:flex-row justify-between items-center gap-4 shadow-sm">
+                    <div className="flex flex-wrap gap-2">
+                        <button onClick={() => { setModoEdicion(false); setListaItems([]); setPlacaSeleccionada(''); setMotivoPedido(''); setFechaGeneral(getFechaLocal()); setIsModalOpen(true); }}
+                            className="bg-[#0070b1] hover:bg-[#005a8e] text-white px-4 py-1.5 rounded-sm text-xs font-bold uppercase transition-all shadow-sm flex items-center gap-2">
+                            <Plus size={14} /> Nuevo Requerimiento
+                        </button>
+                        <div className="h-8 w-px bg-[#d3d7d9] mx-1 hidden md:block" />
+                        <label className="flex items-center gap-2 px-3 py-1.5 rounded-sm border border-[#d3d7d9] cursor-pointer hover:bg-slate-50 transition-colors">
+                            <input type="checkbox" checked={mostrarHistorial} onChange={(e) => setMostrarHistorial(e.target.checked)} className="w-3.5 h-3.5 accent-[#0070b1]" />
+                            <span className="text-[11px] font-bold text-[#6a6d70] uppercase">Mostrar Instalados</span>
+                        </label>
+                        <button onClick={() => setOcultarCompletados(!ocultarCompletados)}
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-sm border transition-all text-[11px] font-bold uppercase ${ocultarCompletados ? 'bg-[#eff4f9] border-[#0070b1] text-[#0070b1]' : 'border-[#d3d7d9] text-[#6a6d70]'}`}>
+                            {ocultarCompletados ? <FilterX size={14} /> : <ListFilter size={14} />} {ocultarCompletados ? 'Solo Pendientes' : 'Ver Todos'}
+                        </button>
                     </div>
 
-                    <div className="flex flex-wrap gap-3 items-center">
-                        <label className="flex items-center gap-2 bg-white px-4 py-2.5 rounded-xl border-2 border-slate-200 cursor-pointer hover:bg-slate-50 transition-all shadow-sm">
-                            <input type="checkbox" checked={mostrarHistorial} onChange={(e) => setMostrarHistorial(e.target.checked)} className="w-4 h-4 text-blue-600 rounded" />
-                            <div className="flex items-center gap-2">
-                                <History size={16} className="text-slate-500" />
-                                <span className="text-sm font-bold text-slate-600">Ver Historial</span>
-                            </div>
-                        </label>
-
-                        <button onClick={cargarDatos} className="bg-white border-2 border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-slate-50 transition-all active:scale-95">
-                            <RotateCw size={18} className={loading ? "animate-spin" : ""} /> Sincronizar
-                        </button>
-                        <button onClick={() => { setModoEdicion(false); setListaItems([]); setPlacaSeleccionada(''); setMotivoPedido(''); setFechaGeneral(getFechaLocal()); setIsModalOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-all shadow-md active:scale-95">
-                            <Plus size={18} /> NUEVO PEDIDO
-                        </button>
-                        <button onClick={() => setOcultarCompletados(!ocultarCompletados)} className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 transition-all font-bold text-sm ${ocultarCompletados ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-white border-slate-200 text-slate-600'}`}>
-                            {ocultarCompletados ? <FilterX size={18} /> : <ListFilter size={18} />} {ocultarCompletados ? 'Pend.' : 'Todos'}
-                        </button>
-                        <div className="relative group">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500" size={18} />
-                            <input type="text" placeholder="Buscar placa, repuesto, código..." className="pl-10 pr-4 py-2.5 border-2 border-slate-200 rounded-xl w-full md:w-80 focus:outline-none focus:border-blue-500 transition-all font-medium" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
-                        </div>
+                    <div className="relative w-full md:w-80">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#6a6d70]" size={14} />
+                        <input
+                            ref={inputBusquedaRef}
+                            type="text"
+                            placeholder="Buscar por placa, repuesto... [ALT+S]"
+                            className="w-full pl-9 pr-4 py-1.5 border border-[#b0b3b5] hover:border-[#0070b1] focus:border-[#0070b1] rounded-sm text-xs outline-none transition-all font-medium"
+                            value={busqueda}
+                            onChange={(e) => setBusqueda(e.target.value)}
+                        />
                     </div>
                 </div>
 
-                {/* RESULTADOS */}
-                <div className="space-y-4">
-                    <div className="flex justify-between items-center px-2">
-                        <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Resultados: {equiposFiltrados.length} Registros</span>
-                        <button onClick={toggleTodos} className="text-xs font-bold text-blue-600 hover:underline">{todosAbiertos ? 'Contraer todo' : 'Expandir todo'}</button>
+                {/* --- LISTADO DE REGISTROS --- */}
+                <div className="space-y-3">
+                    <div className="flex justify-between items-center px-1">
+                        <span className="text-[10px] font-bold text-[#6a6d70] uppercase tracking-tighter">Documentos encontrados: {equiposFiltrados.length}</span>
+                        <button onClick={toggleTodos} className="text-[10px] text-[#0070b1] font-bold uppercase hover:underline">{todosAbiertos ? 'Contraer todo' : 'Expandir todo'}</button>
                     </div>
 
                     {loading ? (
-                        <div className="flex flex-col items-center justify-center py-24 bg-white rounded-3xl border border-slate-100 shadow-sm">
-                            <RefreshCw className="animate-spin text-blue-600 mb-4" size={48} />
-                            <p className="text-slate-400 font-bold animate-pulse">Sincronizando con almacén...</p>
+                        <div className="bg-white border border-[#d3d7d9] py-20 flex flex-col items-center justify-center gap-4">
+                            <RotateCw className="animate-spin text-[#0070b1]" size={32} />
+                            <p className="text-[11px] font-bold text-[#6a6d70] uppercase tracking-widest leading-none">Accediendo a base de datos SAP...</p>
                         </div>
-                    ) : equiposFiltrados.length > 0 ? (
+                    ) : (
                         equiposFiltrados.map((grupo) => (
                             <AcordeonEquipo
                                 key={grupo.id_grupo}
@@ -325,99 +372,94 @@ export default function SeguimientoRepuestosPage() {
                                 onEditItem={(r: any) => prepararEdicion(r, grupo.placa)}
                             />
                         ))
-                    ) : (
-                        <div className="text-center py-20 bg-white rounded-3xl border-2 border-dashed border-slate-200">
-                            <Package className="mx-auto text-slate-200 mb-4" size={64} />
-                            <p className="text-slate-400 font-medium">No se encontraron registros activos.</p>
-                        </div>
                     )}
                 </div>
             </div>
 
-            {/* MODAL FORMULARIO */}
+            {/* --- MODAL FORMULARIO --- */}
             {isModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-md p-4">
-                    <div className="bg-white w-full max-w-2xl rounded-[2rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border border-white/20">
-                        <div className="p-6 bg-slate-50/50 border-b border-slate-100 flex justify-between items-center">
-                            <div>
-                                <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">{modoEdicion ? 'MODIFICAR PEDIDO' : 'REGISTRAR REQUERIMIENTO'}</h2>
-                                <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Múltiples repuestos por equipo</p>
-                            </div>
-                            <button onClick={() => { setIsModalOpen(false); setModoEdicion(false); }} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition-colors"><X /></button>
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#354a5f]/60 backdrop-blur-sm p-4 leading-none">
+                    <div className="bg-white w-full max-w-2xl rounded-sm shadow-2xl overflow-hidden flex flex-col max-h-[95vh] border border-[#d3d7d9]">
+                        <div className="bg-[#354a5f] p-3 flex justify-between items-center text-white">
+                            <span className="text-xs font-bold uppercase tracking-wider">{modoEdicion ? 'Actualizar Documento' : 'Crear Nuevo Requerimiento Técnico'}</span>
+                            <button onClick={() => setIsModalOpen(false)} className="hover:opacity-70"><X size={20} /></button>
                         </div>
 
-                        <div className="p-6 overflow-y-auto space-y-6">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-blue-50/50 p-5 rounded-2xl border border-blue-100 shadow-inner">
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-black uppercase text-blue-600 ml-1">Unidad</label>
-                                    <input list="listaEquipos" className="w-full p-2.5 rounded-xl border-2 border-white font-bold text-sm focus:border-blue-400 outline-none shadow-sm" value={placaSeleccionada} onChange={(e) => setPlacaSeleccionada(e.target.value.toUpperCase())} placeholder="ABC-123" />
+                        <div className="p-6 overflow-y-auto space-y-6 bg-white text-left leading-none">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-[#f7f9fa] p-4 border border-[#d3d7d9]">
+                                <div className="space-y-1.5 text-left leading-none">
+                                    <label className="text-[10px] font-bold text-[#6a6d70] uppercase leading-none">Objeto Técnico (Placa)</label>
+                                    <input list="listaEquipos" className="w-full p-2 border border-[#b0b3b5] focus:border-[#0070b1] outline-none text-xs font-bold uppercase" value={placaSeleccionada} onChange={(e) => setPlacaSeleccionada(e.target.value.toUpperCase())} />
                                     <datalist id="listaEquipos">{equiposMaster.map((eq) => (<option key={eq.placaRodaje} value={eq.placaRodaje}>{eq.codigoEquipo}</option>))}</datalist>
                                 </div>
-                                <div className="md:col-span-2 space-y-1">
-                                    <label className="text-[10px] font-black uppercase text-blue-600 ml-1">Motivo / Descripción de Falla</label>
-                                    <input className="w-full p-2.5 rounded-xl border-2 border-white font-bold text-sm focus:border-blue-400 outline-none shadow-sm uppercase" value={motivoPedido} onChange={(e) => setMotivoPedido(e.target.value)} placeholder="EJ: FUGA DE AIRE POR NIPLE" />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-black uppercase text-blue-600 ml-1">Prioridad</label>
-                                    <select className="w-full p-2.5 rounded-xl border-2 border-white font-bold text-sm outline-none shadow-sm" value={criticidadGeneral} onChange={(e) => setCriticidadGeneral(e.target.value as any)}>
-                                        <option value="Baja">🟢 Baja</option>
-                                        <option value="Media">🟡 Media</option>
-                                        <option value="Alta">🔴 Alta</option>
+                                <div className="space-y-1.5 text-left leading-none">
+                                    <label className="text-[10px] font-bold text-[#6a6d70] uppercase leading-none">Prioridad de Atención</label>
+                                    <select className="w-full p-2 border border-[#b0b3b5] focus:border-[#0070b1] outline-none text-xs font-bold" value={criticidadGeneral} onChange={(e) => setCriticidadGeneral(e.target.value as any)}>
+                                        <option value="Baja">Baja</option><option value="Media">Media</option><option value="Alta">Alta</option>
                                     </select>
                                 </div>
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-black uppercase text-blue-600 ml-1">Fecha Pedido</label>
-                                    <input type="date" className="w-full p-2.5 rounded-xl border-2 border-white font-bold text-sm outline-none shadow-sm" value={fechaGeneral} onChange={(e) => setFechaGeneral(e.target.value)} />
+                                <div className="md:col-span-2 space-y-1.5 text-left leading-none">
+                                    <label className="text-[10px] font-bold text-[#6a6d70] uppercase leading-none">Descripción de la Anomalía / Motivo</label>
+                                    <input className="w-full p-2 border border-[#b0b3b5] focus:border-[#0070b1] outline-none text-xs font-bold uppercase" value={motivoPedido} onChange={(e) => setMotivoPedido(e.target.value)} />
                                 </div>
                             </div>
 
-                            <div className="space-y-3 p-5 bg-white border-2 border-dashed border-slate-200 rounded-3xl">
-                                <div className="flex justify-between items-center"><h3 className="text-xs font-black text-slate-800 flex items-center gap-2 uppercase tracking-tighter"><Plus size={14} className="text-blue-500" /> Nuevo Artículo</h3></div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                    <input placeholder="Descripción detallada..." className="md:col-span-2 p-3 bg-slate-50 rounded-xl text-sm font-semibold border-transparent focus:border-blue-200 outline-none transition-all shadow-inner" value={modoEdicion ? (listaItems[0]?.descripcion || '') : tempItem.descripcion} onChange={(e) => modoEdicion ? setListaItems([{ ...listaItems[0], descripcion: e.target.value }]) : setTempItem({ ...tempItem, descripcion: e.target.value })} />
-                                    <input placeholder="Cód. Almacén" className="p-3 bg-slate-50 rounded-xl text-sm font-mono uppercase" value={modoEdicion ? (listaItems[0]?.codigoalmacen || '') : tempItem.codigoalmacen} onChange={(e) => modoEdicion ? setListaItems([{ ...listaItems[0], codigoalmacen: e.target.value.toUpperCase() }]) : setTempItem({ ...tempItem, codigoalmacen: e.target.value.toUpperCase() })} />
-                                    <input placeholder="Referencia / Parte" className="p-3 bg-slate-50 rounded-xl text-sm font-mono uppercase" value={modoEdicion ? (listaItems[0]?.codigo_repuesto || '') : tempItem.codigo_repuesto} onChange={(e) => modoEdicion ? setListaItems([{ ...listaItems[0], codigo_repuesto: e.target.value.toUpperCase() }]) : setTempItem({ ...tempItem, codigo_repuesto: e.target.value.toUpperCase() })} />
-                                    <div className="flex gap-2 md:col-span-2">
-                                        <div className="flex items-center bg-slate-100 rounded-xl px-2">
-                                            <span className="text-[10px] font-black px-2 opacity-50">CANT:</span>
-                                            <input type="number" className="w-16 p-3 bg-transparent text-sm font-black outline-none" value={modoEdicion ? (listaItems[0]?.cantidad || 1) : tempItem.cantidad} onChange={(e) => modoEdicion ? setListaItems([{ ...listaItems[0], cantidad: parseInt(e.target.value) }]) : setTempItem({ ...tempItem, cantidad: parseInt(e.target.value) })} />
+                            <div className="space-y-4 p-4 border border-[#d3d7d9] rounded-sm text-left leading-none">
+                                <h3 className="text-[10px] font-black text-[#0070b1] uppercase flex items-center gap-2 border-b pb-2 leading-none"><Plus size={14} /> Añadir Ítems al Documento</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-left leading-none">
+                                    <div className="md:col-span-2 space-y-1 text-left leading-none">
+                                        <label className="text-[9px] font-bold text-slate-400 uppercase leading-none">Descripción Técnica del Repuesto</label>
+                                        <input className="w-full p-2 border border-[#b0b3b5] text-xs font-medium outline-none focus:border-[#0070b1]" value={modoEdicion ? (listaItems[0]?.descripcion || '') : tempItem.descripcion} onChange={(e) => modoEdicion ? setListaItems([{ ...listaItems[0], descripcion: e.target.value }]) : setTempItem({ ...tempItem, descripcion: e.target.value })} />
+                                    </div>
+                                    <div className="space-y-1 text-left leading-none">
+                                        <label className="text-[9px] font-bold text-slate-400 uppercase leading-none">Cód. Almacén</label>
+                                        <input className="w-full p-2 border border-[#b0b3b5] text-xs font-mono uppercase outline-none focus:border-[#0070b1]" value={modoEdicion ? (listaItems[0]?.codigoalmacen || '') : tempItem.codigoalmacen} onChange={(e) => modoEdicion ? setListaItems([{ ...listaItems[0], codigoalmacen: e.target.value.toUpperCase() }]) : setTempItem({ ...tempItem, codigoalmacen: e.target.value.toUpperCase() })} />
+                                    </div>
+                                    <div className="space-y-1 text-left leading-none">
+                                        <label className="text-[9px] font-bold text-slate-400 uppercase leading-none">Nº de Parte</label>
+                                        <input className="w-full p-2 border border-[#b0b3b5] text-xs font-mono uppercase outline-none focus:border-[#0070b1]" value={modoEdicion ? (listaItems[0]?.codigo_repuesto || '') : tempItem.codigo_repuesto} onChange={(e) => modoEdicion ? setListaItems([{ ...listaItems[0], codigo_repuesto: e.target.value.toUpperCase() }]) : setTempItem({ ...tempItem, codigo_repuesto: e.target.value.toUpperCase() })} />
+                                    </div>
+                                    <div className="md:col-span-2 flex gap-3 text-left leading-none items-end">
+                                        <div className="w-24 space-y-1 leading-none">
+                                            <label className="text-[9px] font-bold text-slate-400 uppercase leading-none">Cantidad</label>
+                                            <input type="number" className="w-full p-2 border border-[#b0b3b5] text-xs font-black outline-none focus:border-[#0070b1]" value={modoEdicion ? (listaItems[0]?.cantidad || 1) : tempItem.cantidad} onChange={(e) => modoEdicion ? setListaItems([{ ...listaItems[0], cantidad: parseInt(e.target.value) }]) : setTempItem({ ...tempItem, cantidad: parseInt(e.target.value) })} />
                                         </div>
-                                        <select className="flex-1 p-3 bg-slate-50 rounded-xl text-sm font-bold outline-none" value={modoEdicion ? (listaItems[0]?.status || 'Creado') : tempItem.status} onChange={(e) => modoEdicion ? setListaItems([{ ...listaItems[0], status: e.target.value as any }]) : setTempItem({ ...tempItem, status: e.target.value as any })}>
-                                            <option value="Creado">Creado</option>
-                                            <option value="Enviado">Enviado</option>
-                                            <option value="Pedido">Pedido</option>
-                                            <option value="Concluido">Recibido</option>
-                                            <option value="Instalado">✅ Instalado</option>
-                                        </select>
+                                        <div className="flex-grow space-y-1 leading-none">
+                                            <label className="text-[9px] font-bold text-slate-400 uppercase leading-none">Estado de Línea</label>
+                                            <select className="w-full p-2 border border-[#b0b3b5] text-xs font-bold outline-none focus:border-[#0070b1]" value={modoEdicion ? (listaItems[0]?.status || 'Creado') : tempItem.status} onChange={(e) => modoEdicion ? setListaItems([{ ...listaItems[0], status: e.target.value as any }]) : setTempItem({ ...tempItem, status: e.target.value as any })}>
+                                                <option value="Creado">Creado</option><option value="Enviado">Enviado</option><option value="Pedido">Pedido</option><option value="Concluido">Recibido</option><option value="Instalado">Instalado</option>
+                                            </select>
+                                        </div>
                                         {!modoEdicion && (
-                                            <button onClick={agregarItemALista} className="bg-blue-600 text-white px-5 rounded-xl hover:bg-blue-700 active:scale-90 transition-all shadow-md"><Plus size={20} /></button>
+                                            <button onClick={agregarItemALista} className="bg-[#0070b1] text-white px-4 py-2 rounded-sm hover:bg-[#005a8e] transition-colors"><Plus size={16} /></button>
                                         )}
                                     </div>
                                 </div>
                             </div>
 
-                            <div className="space-y-2">
+                            <div className="space-y-1 max-h-40 overflow-y-auto leading-none">
                                 {listaItems.map((item) => (
-                                    <div key={item.id_temp} className="flex items-center justify-between p-4 rounded-2xl border bg-slate-50 shadow-sm">
+                                    <div key={item.id_temp} className="flex items-center justify-between p-2 border-b border-[#f2f4f5] bg-white hover:bg-[#f7f9fa] leading-none text-left">
                                         <div className="flex items-center gap-3">
-                                            <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-[10px] font-black">{item.cantidad}</span>
-                                            <p className="text-sm font-bold text-slate-700 uppercase tracking-tighter">{item.descripcion}</p>
+                                            <span className="text-[10px] font-black text-[#0070b1] leading-none">{item.cantidad} UN</span>
+                                            <p className="text-[11px] font-bold text-[#32363a] uppercase leading-none">{item.descripcion}</p>
                                         </div>
-                                        {!modoEdicion && <button onClick={() => setListaItems(listaItems.filter(i => i.id_temp !== item.id_temp))} className="text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>}
+                                        {!modoEdicion && <button onClick={() => setListaItems(listaItems.filter(i => i.id_temp !== item.id_temp))} className="text-[#bb0000] hover:bg-red-50 p-1 rounded-sm transition-colors leading-none"><Trash2 size={14} /></button>}
                                     </div>
                                 ))}
                             </div>
                         </div>
 
-                        <div className="p-6 bg-slate-50/50 border-t border-slate-100">
-                            <button onClick={handleGuardarTodo} className="w-full bg-[#1E293B] hover:bg-green-600 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest transition-all shadow-xl flex items-center justify-center gap-3 active:scale-[0.98]">
-                                <Save size={18} /> {modoEdicion ? 'ACTUALIZAR REGISTRO' : 'CONFIRMAR Y GUARDAR PEDIDO'}
+                        <div className="p-4 bg-[#f2f4f5] border-t flex justify-end gap-3 leading-none">
+                            <button onClick={() => setIsModalOpen(false)} className="px-6 py-2 border border-[#b0b3b5] bg-white rounded-sm font-bold text-[11px] uppercase hover:bg-slate-50 transition-all leading-none">Cancelar</button>
+                            <button onClick={handleGuardarTodo} className="px-8 py-2 bg-[#0070b1] hover:bg-[#005a8e] text-white rounded-sm font-bold text-[11px] uppercase shadow-md transition-all flex items-center gap-2 leading-none">
+                                <Save size={14} /> {modoEdicion ? 'Actualizar Transacción' : 'Contabilizar Pedido'}
                             </button>
                         </div>
                     </div>
                 </div>
             )}
-        </div>
+        </main>
     );
 }
 
@@ -434,111 +476,86 @@ function AcordeonEquipo({ equipo, isOpen, onToggle, onUpdateStatus, onDeleteItem
     const itemsConcluidos = equipo.repuestos.filter((r: any) => r.status === 'Concluido' || r.status === 'Instalado').length;
     const dias = calcularDiasTotales();
 
-    const getProgressWidth = (status: string) => {
-        const steps = { 'Creado': '20%', 'Enviado': '40%', 'Pedido': '60%', 'Concluido': '85%', 'Instalado': '100%' };
-        return steps[status as keyof typeof steps] || '0%';
-    };
-
     const getStatusColor = (status: string) => {
-        const colors = { 'Creado': 'bg-slate-300', 'Enviado': 'bg-orange-400', 'Pedido': 'bg-blue-500', 'Concluido': 'bg-emerald-500', 'Instalado': 'bg-green-600' };
-        return colors[status as keyof typeof colors] || 'bg-slate-200';
+        const colors = { 'Creado': 'bg-slate-400', 'Enviado': 'bg-orange-500', 'Pedido': 'bg-blue-600', 'Concluido': 'bg-emerald-600', 'Instalado': 'bg-green-700' };
+        return colors[status as keyof typeof colors] || 'bg-slate-300';
     };
 
     return (
-        <div className="bg-white rounded-[1.5rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all duration-300">
-            <button onClick={onToggle} className={`w-full flex flex-col md:flex-row md:items-center justify-between p-5 hover:bg-slate-50 transition-colors text-left gap-4 ${isOpen ? 'bg-slate-50/80' : ''}`}>
-                <div className="flex flex-wrap items-center gap-4 md:gap-8">
-                    <div className="bg-slate-900 text-white font-black px-4 py-2 rounded-xl text-lg tracking-tighter shadow-sm">{equipo.placa}</div>
-                    <div className="flex-1 min-w-[200px]">
-                        <p className="text-[9px] text-blue-500 uppercase font-black tracking-widest mb-1">Motivo del Pedido</p>
-                        <p className="text-slate-800 font-black text-sm uppercase truncate max-w-sm">{equipo.falla_grupo}</p>
+        <div className="bg-white border border-[#d3d7d9] shadow-sm overflow-hidden text-left leading-none">
+            <button onClick={onToggle} className={`w-full flex flex-col md:flex-row md:items-center justify-between p-3 hover:bg-[#f7f9fa] transition-colors gap-4 border-l-4 ${itemsConcluidos === totalItems ? 'border-l-green-600' : 'border-l-[#0070b1]'} ${isOpen ? 'bg-[#f7f9fa]' : ''}`}>
+                <div className="flex flex-wrap items-center gap-6">
+                    <div className="bg-[#354a5f] text-white font-bold px-3 py-1.5 text-base font-mono tracking-tighter leading-none">{equipo.placa}</div>
+                    <div className="flex-1 min-w-[200px] leading-none">
+                        <p className="text-[9px] text-[#0070b1] uppercase font-bold mb-1 leading-none">Falla / Motivo Pedido</p>
+                        <p className="text-[#32363a] font-bold text-[13px] uppercase truncate max-w-sm leading-none">{equipo.falla_grupo}</p>
                     </div>
-                    <div className="flex items-center gap-2 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
-                        <Calendar size={14} className="text-blue-500" />
-                        <span className="text-sm font-black text-blue-700">{equipo.fecha.split('-').reverse().join('/')}</span>
+                    <div className="flex items-center gap-2 bg-[#eff4f9] px-2 py-1 rounded-sm border border-[#b0ccf0] leading-none">
+                        <Calendar size={12} className="text-[#0070b1]" />
+                        <span className="text-[11px] font-bold text-[#0070b1] leading-none">{equipo.fecha.split('-').reverse().join('/')}</span>
                     </div>
-                    <div>
-                        <p className="text-[9px] text-slate-400 uppercase font-black tracking-widest leading-tight">Cod. Equipo</p>
-                        <p className="text-slate-700 font-black text-sm tracking-tighter">{equipo.codigo_interno}</p>
-                    </div>
-                    <div>
-                        <p className="text-[9px] text-slate-400 uppercase font-black tracking-widest leading-tight">Espera</p>
-                        <div className={`flex items-center gap-1.5 font-bold text-sm ${dias > 15 ? 'text-red-500' : 'text-slate-600'}`}>
-                            <Clock size={14} /> <span>{dias <= 0 ? 'Hoy' : `${dias} d`}</span>
+                    <div className="leading-none">
+                        <p className="text-[9px] text-[#6a6d70] uppercase font-bold mb-1 leading-none">Espera Logística</p>
+                        <div className={`flex items-center gap-1.5 font-bold text-[11px] leading-none ${dias > 15 ? 'text-[#bb0000]' : 'text-[#32363a]'}`}>
+                            <Clock size={12} /> <span>{dias <= 0 ? 'Hoy' : `${dias} Días`}</span>
                         </div>
                     </div>
-                    <div>
-                        <p className="text-[9px] text-slate-400 uppercase font-black tracking-widest leading-tight">Status Pedido</p>
-                        <span className={`text-[10px] font-black px-3 py-1 rounded-full border uppercase tracking-tighter ${itemsConcluidos === totalItems ? 'text-green-600 bg-green-50 border-green-100' : 'text-blue-600 bg-blue-50 border-blue-100'}`}>
-                            {itemsConcluidos === totalItems ? 'PROCESADO' : `${itemsConcluidos}/${totalItems} Recibidos`}
+                    <div className="leading-none text-right">
+                        <p className="text-[9px] text-[#6a6d70] uppercase font-bold mb-1 leading-none text-right">Cumplimiento</p>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-sm border uppercase ${itemsConcluidos === totalItems ? 'text-green-700 bg-green-50 border-green-200' : 'text-[#0070b1] bg-blue-50 border-[#b0ccf0]'}`}>
+                            {itemsConcluidos === totalItems ? 'Completo' : `${itemsConcluidos}/${totalItems}`}
                         </span>
                     </div>
                 </div>
-                <div className={`p-2 rounded-full transition-all ${isOpen ? 'bg-blue-600 text-white rotate-180 shadow-lg' : 'bg-slate-100 text-slate-400'}`}>
-                    <ChevronDown size={20} />
-                </div>
+                <ChevronDown size={18} className={`text-[#6a6d70] transition-transform ${isOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {isOpen && (
-                <div className="p-6 border-t border-slate-100 bg-white animate-in slide-in-from-top duration-300">
-                    <div className="mb-6 flex items-start gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-100 shadow-inner">
-                        <AlertCircle className="text-blue-500 mt-1 shrink-0" size={20} />
-                        <div>
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 leading-none">Descripción técnica / Falla</p>
-                            <p className="text-slate-700 font-bold text-base uppercase leading-tight">{equipo.falla_grupo}</p>
-                        </div>
-                    </div>
-
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead>
-                                <tr className="text-slate-400 text-[10px] uppercase border-b border-slate-100 font-black tracking-widest">
-                                    <th className="pb-4 text-left">Código Logístico</th>
-                                    <th className="pb-4 text-left">Ítem / Repuesto</th>
-                                    <th className="pb-4 text-center">Prioridad</th>
-                                    <th className="pb-4 text-left">Línea de Estado</th>
-                                    <th className="pb-4 text-right">Acción</th>
+                <div className="p-4 border-t border-[#d3d7d9] bg-white animate-in slide-in-from-top duration-300 leading-none">
+                    <div className="overflow-x-auto leading-none">
+                        <table className="w-full text-xs leading-none">
+                            <thead className="bg-[#f2f4f5] leading-none text-left">
+                                <tr className="text-[#6a6d70] text-[10px] uppercase border-b border-[#d3d7d9] font-bold leading-none">
+                                    <th className="p-3 text-left leading-none">Datos Almacén</th>
+                                    <th className="p-3 text-left leading-none">Material / Servicio</th>
+                                    <th className="p-3 text-center leading-none">Prioridad</th>
+                                    <th className="p-3 text-left leading-none w-56">Estado Transaccional</th>
+                                    <th className="p-3 text-right leading-none">Acciones</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-50">
+                            <tbody className="divide-y divide-[#ebeef0] leading-none">
                                 {equipo.repuestos.map((r: any) => (
-                                    <tr key={r.id} className={`group hover:bg-slate-50/50 ${r.status === 'Instalado' ? 'opacity-60 grayscale-[0.5]' : ''}`}>
-                                        <td className="py-4">
-                                            <div className="font-mono text-[11px] font-bold text-blue-600 uppercase">{r.codigo_almacen}</div>
-                                            <div className="font-mono text-[10px] text-slate-400 mt-1 uppercase tracking-tighter">{r.codigo_fabricante}</div>
+                                    <tr key={r.id} className={`hover:bg-[#f7f9fa] ${r.status === 'Instalado' ? 'opacity-50 grayscale-[0.3]' : ''} leading-none text-left`}>
+                                        <td className="p-3 leading-none text-left">
+                                            <div className="font-mono text-[11px] font-bold text-[#0070b1] uppercase leading-none">{r.codigo_almacen}</div>
+                                            <div className="font-mono text-[9px] text-[#6a6d70] mt-1 uppercase leading-none tracking-tighter">{r.codigo_fabricante}</div>
                                         </td>
-                                        <td className="py-4 font-bold text-slate-700 uppercase tracking-tighter">
-                                            <div className="flex items-center gap-2">
-                                                {/* ✅ Corregido: Wrench ahora funciona sin error */}
-                                                {r.es_servicio ? <Wrench size={14} className="text-orange-500" /> : <Package size={14} className="text-blue-500" />}
-                                                {r.descripcion} <span className="text-blue-500 font-black ml-1">x{r.cantidad}</span>
-                                            </div>
-                                            <div className="text-[9px] text-slate-400 flex items-center gap-2 mt-1 font-bold tracking-widest">
-                                                <span className={r.es_servicio ? 'text-orange-600' : 'text-blue-600'}>{r.es_servicio ? 'SERVICIO' : 'REPUESTO'}</span>
+                                        <td className="p-3 font-bold text-[#32363a] uppercase leading-none text-left">
+                                            <div className="flex items-center gap-2 leading-none text-left">
+                                                {r.es_servicio ? <Wrench size={12} className="text-[#e6600d]" /> : <Package size={12} className="text-[#0070b1]" />}
+                                                {r.descripcion} <span className="text-[#0070b1] font-black ml-1 leading-none text-left">x{r.cantidad}</span>
                                             </div>
                                         </td>
-                                        <td className="py-4 text-center">
-                                            <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider ${r.criticidad === 'Alta' ? 'bg-red-50 text-red-600 border border-red-100' : r.criticidad === 'Media' ? 'bg-amber-50 text-amber-600 border border-amber-100' : 'bg-slate-50 text-slate-500'}`}>
+                                        <td className="p-3 text-center leading-none">
+                                            <span className={`px-2 py-0.5 rounded-sm text-[9px] font-bold border uppercase ${r.criticidad === 'Alta' ? 'bg-[#fff4f4] text-[#bb0000] border-[#ffbbbb]' : r.criticidad === 'Media' ? 'bg-[#fff8f0] text-[#e6600d] border-[#f3d3b6]' : 'bg-[#f4f4f4] text-[#6a6d70] border-[#d3d7d9]'}`}>
                                                 {r.criticidad}
                                             </span>
                                         </td>
-                                        <td className="py-4">
-                                            <div className="w-48">
-                                                <div className="flex justify-between items-center mb-1.5 px-1">
-                                                    <select value={r.status} onChange={(e) => onUpdateStatus(r.id, e.target.value)} className="text-[10px] font-black uppercase bg-transparent outline-none cursor-pointer hover:text-blue-600 transition-colors">
-                                                        <option value="Creado">Creado</option><option value="Enviado">Enviado</option><option value="Pedido">Pedido</option><option value="Concluido">Recibido</option><option value="Instalado">✅ Instalado</option>
-                                                    </select>
-                                                    {r.status === 'Instalado' && <CheckCircle2 size={12} className="text-green-600" />}
-                                                </div>
-                                                <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden shadow-inner">
-                                                    <div style={{ width: getProgressWidth(r.status) }} className={`h-full transition-all duration-700 shadow-sm ${getStatusColor(r.status)}`} />
+                                        <td className="p-3 leading-none text-left">
+                                            <div className="flex flex-col gap-1.5 leading-none text-left">
+                                                <select value={r.status} onChange={(e) => onUpdateStatus(r.id, e.target.value)} className="text-[10px] font-bold uppercase bg-transparent outline-none cursor-pointer text-[#0070b1] hover:underline leading-none text-left">
+                                                    <option value="Creado">Creado</option><option value="Enviado">Enviado</option><option value="Pedido">Pedido</option><option value="Concluido">Recibido</option><option value="Instalado">Instalado</option>
+                                                </select>
+                                                <div className="h-1 w-full bg-[#f2f4f5] border border-[#d3d7d9] rounded-sm overflow-hidden leading-none">
+                                                    <div style={{ width: r.status === 'Instalado' ? '100%' : r.status === 'Concluido' ? '85%' : r.status === 'Pedido' ? '60%' : '20%' }}
+                                                        className={`h-full transition-all duration-700 ${getStatusColor(r.status)}`} />
                                                 </div>
                                             </div>
                                         </td>
-                                        <td className="py-4 text-right">
-                                            <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button onClick={() => onEditItem(r)} className="p-2 text-slate-300 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-all"><Pencil size={16} /></button>
-                                                <button onClick={() => onDeleteItem(r.id)} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"><Trash2 size={16} /></button>
+                                        <td className="p-3 text-right leading-none">
+                                            <div className="flex justify-end gap-1 leading-none">
+                                                <button onClick={() => onEditItem(r)} className="p-1.5 text-[#0070b1] hover:bg-[#eff4f9] rounded-sm transition-all leading-none"><Pencil size={14} /></button>
+                                                <button onClick={() => onDeleteItem(r.id)} className="p-1.5 text-[#bb0000] hover:bg-red-50 rounded-sm transition-all leading-none"><Trash2 size={14} /></button>
                                             </div>
                                         </td>
                                     </tr>
@@ -551,3 +568,5 @@ function AcordeonEquipo({ equipo, isOpen, onToggle, onUpdateStatus, onDeleteItem
         </div>
     );
 }
+
+//

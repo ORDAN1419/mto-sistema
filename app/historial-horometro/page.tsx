@@ -5,10 +5,12 @@ import { useRouter } from 'next/navigation'
 import * as XLSX from 'xlsx'
 import jsPDF from 'jspdf'
 import {
-  ArrowLeft, Search, Gauge, Truck, X, Save, Loader2, Download, History,
+  ArrowLeft, Search, Gauge, Truck, X, Save, Loader2, History,
   ChevronRight, ArrowUpCircle, Clock, Wrench, ShieldCheck, ShieldAlert,
-  LayoutGrid, RefreshCw, Box, Activity, Target, AlertOctagon, CheckCircle2,
-  MapPin, ClipboardList, Construction, LogOut, FileText, HelpCircle
+  LayoutGrid, // ✅ IMPORTACIÓN CORREGIDA
+  RefreshCw, Box, Activity, Target, AlertOctagon, CheckCircle2,
+  MapPin, ClipboardList, Construction, LogOut, FileText, HelpCircle,
+  Settings2, CalendarDays, Zap
 } from 'lucide-react'
 
 // ✅ FUNCIÓN PARA OBTENER FECHA LOCAL REAL
@@ -36,6 +38,8 @@ interface EquipoEstado {
   ultima_fecha: string | null;
   ProxHoroKmMp: number | null;
   tipoProxMp: string | null;
+  tipoMpUlt: string | null;
+  frecuencia: number | null;
   desface: number | null;
   status: string | null;
   obs: string;
@@ -56,7 +60,6 @@ export default function EstadoGeneralPage() {
   const [equipoSeleccionado, setEquipoSeleccionado] = useState<EquipoEstado | null>(null)
   const [form, setForm] = useState({ inicio: '', final: '', fecha: obtenerFechaHoyLocal() })
   const [enviando, setEnviando] = useState(false)
-  const [generandoPDF, setGenerandoPDF] = useState(false)
   const [historialModal, setHistorialModal] = useState<any[]>([])
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false)
 
@@ -98,6 +101,7 @@ export default function EstadoGeneralPage() {
       if (e.ctrlKey && e.key === '2') { e.preventDefault(); router.push('/bdrepuestos'); }
       if (e.ctrlKey && e.key === '3') { e.preventDefault(); router.push('/estatus'); }
       if (e.ctrlKey && e.key === '4') { e.preventDefault(); router.push('/repuestos'); }
+      if (e.ctrlKey && e.key === '0') { e.preventDefault(); router.push('/equipos'); }
       if (e.altKey && e.key.toLowerCase() === 's') { e.preventDefault(); inputBusquedaRef.current?.focus(); }
       if (e.altKey && e.key.toLowerCase() === 'h') { e.preventDefault(); setIsHelpModalOpen(p => !p); }
       if (e.altKey && e.key.toLowerCase() === 'x') { e.preventDefault(); setBusqueda(''); setFiltroKPI('TODOS'); }
@@ -114,7 +118,7 @@ export default function EstadoGeneralPage() {
     }
   }, [equipoSeleccionado, fetchHistorial])
 
-  // --- 4. LÓGICA DE FILTRADO Y AGRUPACIÓN (REIMAGINADA) ---
+  // --- 4. LÓGICA DE FILTRADO Y AGRUPACIÓN ---
   const kpiSalud = useMemo(() => {
     const gestionados = equipos.filter(e => e.desface !== null);
     if (gestionados.length === 0) return { saludable: 0, cumplimiento: 0, confiabilidad: 0, vencidos: 0 };
@@ -128,20 +132,12 @@ export default function EstadoGeneralPage() {
 
   const equiposAgrupados = useMemo(() => {
     const q = busqueda.toLowerCase().trim();
-
     const filtrados = equipos.filter(e => {
-      // 1. Filtro de Botones KPI
       let pasaKPI = true;
       if (filtroKPI === 'SALUDABLE') pasaKPI = e.desface !== null && e.desface > 24;
       if (filtroKPI === 'CUMPLIMIENTO') pasaKPI = e.desface !== null && e.desface > 0;
       if (filtroKPI === 'RIESGO') pasaKPI = e.desface !== null && e.desface <= 0;
-
-      // 2. Filtro de Búsqueda (Placa, Código y AHORA Grupo/Descripción)
-      const matchBusqueda = !q ||
-        e.placaRodaje?.toLowerCase().includes(q) ||
-        e.codigoEquipo?.toLowerCase().includes(q) ||
-        e.descripcionEquipo?.toLowerCase().includes(q); // ✅ Filtrado por Grupo incluido
-
+      const matchBusqueda = !q || e.placaRodaje?.toLowerCase().includes(q) || e.codigoEquipo?.toLowerCase().includes(q) || e.descripcionEquipo?.toLowerCase().includes(q);
       return pasaKPI && matchBusqueda;
     });
 
@@ -152,11 +148,7 @@ export default function EstadoGeneralPage() {
       grupos[cat].push(eq);
     });
 
-    // ✅ ORDENAMIENTO DENTRO DEL GRUPO: Menor a Mayor Desfase
-    Object.keys(grupos).forEach(key => {
-      grupos[key].sort((a, b) => (a.desface || 0) - (b.desface || 0));
-    });
-
+    Object.keys(grupos).forEach(key => { grupos[key].sort((a, b) => (a.desface || 0) - (b.desface || 0)); });
     return grupos;
   }, [equipos, filtroKPI, busqueda]);
 
@@ -180,20 +172,19 @@ export default function EstadoGeneralPage() {
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-[#f7f9fa]"><RefreshCw className="animate-spin text-[#0070b1]" size={40} /></div>
 
   return (
-    <main className="min-h-screen bg-[#f7f9fa] text-[#32363a] font-sans">
+    <main className="min-h-screen bg-[#f7f9fa] text-[#32363a] font-sans text-left leading-none">
       <nav className="bg-[#354a5f] text-white h-12 flex items-center px-4 justify-between shadow-md sticky top-0 z-40">
-        <div className="flex items-center gap-4 text-left">
+        <div className="flex items-center gap-4 text-left leading-none">
           <ArrowLeft size={18} onClick={() => router.back()} className="cursor-pointer hover:opacity-70" />
           <div className="h-6 w-px bg-white/20" />
           <span className="font-bold text-xs tracking-wider uppercase italic leading-none">Monitor de Salud | SAP S/4HANA</span>
         </div>
-        <div className="flex items-center gap-6 text-left">
-          <div className="relative">
+        <div className="flex items-center gap-6 text-left leading-none">
+          <div className="relative leading-none">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-white/50" size={14} />
-            <input ref={inputBusquedaRef} onChange={(e) => setBusqueda(e.target.value)} className="bg-white/10 border border-white/20 rounded-sm py-1 pl-8 pr-2 text-xs outline-none focus:bg-white focus:text-slate-900 transition-all w-64" placeholder="Buscar Placa o Grupo [ALT+S]..." />
+            <input ref={inputBusquedaRef} onChange={(e) => setBusqueda(e.target.value)} className="bg-white/10 border border-white/20 rounded-sm py-1 pl-8 pr-2 text-xs outline-none focus:bg-white focus:text-slate-900 transition-all w-64 font-bold" placeholder="Buscar Placa o Grupo..." />
           </div>
           <HelpCircle size={18} className="cursor-pointer opacity-80 hover:opacity-100" onClick={() => setIsHelpModalOpen(true)} />
-          <div className="w-8 h-8 rounded-sm bg-white/10 flex items-center justify-center font-bold text-[10px] border border-white/20 uppercase">AD</div>
         </div>
       </nav>
 
@@ -204,26 +195,26 @@ export default function EstadoGeneralPage() {
             <SapKpiTile label="Cumplimiento" value={`${kpiSalud.cumplimiento}%`} color="blue" active={filtroKPI === 'CUMPLIMIENTO'} onClick={() => setFiltroKPI('CUMPLIMIENTO')} />
             <div className="bg-white border border-[#d3d7d9] p-3 rounded-sm shadow-sm text-left">
               <p className="text-[10px] font-bold text-[#6a6d70] uppercase leading-none mb-1">Disponibilidad</p>
-              <p className="text-xl font-light text-[#0070b1] leading-none">{kpiSalud.confiabilidad}%</p>
+              <p className="text-xl font-light text-[#0070b1] leading-none font-mono">{kpiSalud.confiabilidad}%</p>
             </div>
             <SapKpiTile label="Vencidos" value={kpiSalud.vencidos} color="rose" active={filtroKPI === 'RIESGO'} onClick={() => setFiltroKPI('RIESGO')} />
           </div>
 
           <div className="bg-white border border-[#d3d7d9] shadow-sm rounded-sm">
-            <div className="bg-[#f2f4f5] border-b border-[#d3d7d9] px-4 py-2 flex justify-between items-center">
-              <div className="flex items-center gap-2 text-[#6a6d70] text-left">
+            <div className="bg-[#f2f4f5] border-b border-[#d3d7d9] px-4 py-2 flex justify-between items-center leading-none">
+              <div className="flex items-center gap-2 text-[#6a6d70] text-left leading-none">
                 <LayoutGrid size={14} />
                 <span className="text-[11px] font-bold uppercase tracking-tight leading-none">Visión General de Flota</span>
               </div>
-              <button onClick={() => setFiltroKPI('TODOS')} className="text-[10px] text-[#0070b1] font-bold hover:underline">Reiniciar Filtros</button>
+              <button onClick={() => setFiltroKPI('TODOS')} className="text-[10px] text-[#0070b1] font-bold hover:underline uppercase leading-none">Reiniciar Filtros</button>
             </div>
 
             <div className="p-4 max-h-[calc(100vh-220px)] overflow-y-auto space-y-6 text-left bg-white">
               {Object.entries(equiposAgrupados).map(([grupo, lista]) => (
                 <div key={grupo} className="space-y-2">
-                  <div className="flex items-center gap-2 border-b border-[#f2f4f5] pb-1">
+                  <div className="flex items-center gap-2 border-b border-[#f2f4f5] pb-1 leading-none">
                     <Box size={12} className="text-[#0070b1]" />
-                    <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{grupo}</h3>
+                    <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none">{grupo}</h3>
                     <div className="h-px flex-grow bg-[#f2f4f5]" />
                   </div>
                   <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-10 gap-1">
@@ -245,7 +236,7 @@ export default function EstadoGeneralPage() {
 
         {equipoSeleccionado && (
           <div className="w-1/3 bg-white border border-[#d3d7d9] shadow-xl rounded-sm flex flex-col animate-in slide-in-from-right duration-300">
-            <div className="p-4 border-b border-[#d3d7d9] bg-[#f7f9fa] flex justify-between items-center text-left">
+            <div className="p-4 border-b border-[#d3d7d9] bg-[#f7f9fa] flex justify-between items-center text-left leading-none">
               <div className="leading-none text-left">
                 <h2 className="text-lg font-light text-[#0070b1] uppercase tracking-tighter mb-1 leading-none">{equipoSeleccionado.placaRodaje}</h2>
                 <span className="text-[10px] font-bold text-slate-400 uppercase leading-none">{equipoSeleccionado.codigoEquipo}</span>
@@ -254,20 +245,45 @@ export default function EstadoGeneralPage() {
             </div>
 
             <div className="p-5 space-y-6 overflow-y-auto">
-              <div className="grid grid-cols-2 gap-2 text-left leading-none">
-                <div className="p-3 bg-[#f2f4f5] border border-[#d3d7d9] rounded-sm">
-                  <p className="text-[9px] font-bold text-[#6a6d70] uppercase mb-1 flex items-center gap-1 leading-none"><Clock size={10} /> Próx. MP</p>
-                  <p className="text-sm font-black text-slate-700 font-mono leading-none">{equipoSeleccionado.ProxHoroKmMp || 'N/A'}</p>
+              {/* STATUS DE MANTENIMIENTO SAP */}
+              <div className="space-y-3 bg-[#eff4f9] p-4 border border-[#b0ccf0] rounded-sm">
+                <h4 className="text-[10px] font-black text-[#0070b1] uppercase flex items-center gap-2 border-b border-[#b0ccf0] pb-2 leading-none mb-3">
+                  <Settings2 size={12} /> Planificación de Mantenimiento
+                </h4>
+
+                <div className="grid grid-cols-2 gap-4 text-left leading-none">
+                  <div>
+                    <p className="text-[9px] font-bold text-[#6a6d70] uppercase mb-1 leading-none">Último MP Ejecutado</p>
+                    <div className="flex items-center gap-2 text-[#32363a]">
+                      <Zap size={12} className="text-emerald-600" />
+                      <span className="text-xs font-black uppercase">{equipoSeleccionado.tipoMpUlt || 'N/A'}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-bold text-[#6a6d70] uppercase mb-1 leading-none">Frecuencia Plan</p>
+                    <div className="flex items-center gap-2 text-[#32363a]">
+                      <CalendarDays size={12} className="text-blue-600" />
+                      <span className="text-xs font-black uppercase">{equipoSeleccionado.frecuencia ? `${equipoSeleccionado.frecuencia} h` : 'N/A'}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className={`p-3 border rounded-sm ${equipoSeleccionado.desface! <= 0 ? 'bg-rose-50 border-rose-200' : 'bg-emerald-50 border-emerald-200'}`}>
-                  <p className="text-[9px] font-bold text-[#6a6d70] uppercase mb-1 leading-none text-left">Estado Desfase</p>
-                  <p className={`text-sm font-black font-mono leading-none text-left ${equipoSeleccionado.desface! <= 0 ? 'text-rose-600' : 'text-emerald-700'}`}>{equipoSeleccionado.desface?.toFixed(1)} h</p>
+
+                <div className="grid grid-cols-2 gap-2 mt-4 text-left leading-none">
+                  <div className="p-3 bg-white border border-[#d3d7d9] rounded-sm">
+                    <p className="text-[9px] font-bold text-[#6a6d70] uppercase mb-1 flex items-center gap-1 leading-none"><Clock size={10} /> Próx. {equipoSeleccionado.tipoProxMp || 'MP'}</p>
+                    <p className="text-sm font-black text-slate-700 font-mono leading-none">{equipoSeleccionado.ProxHoroKmMp || 'N/A'}</p>
+                  </div>
+                  <div className={`p-3 border rounded-sm ${equipoSeleccionado.desface! <= 0 ? 'bg-rose-50 border-rose-200' : 'bg-emerald-50 border-emerald-200'}`}>
+                    <p className="text-[9px] font-bold text-[#6a6d70] uppercase mb-1 leading-none text-left tracking-tighter">Estado Desfase</p>
+                    <p className={`text-sm font-black font-mono leading-none text-left ${equipoSeleccionado.desface! <= 0 ? 'text-rose-600' : 'text-emerald-700'}`}>{equipoSeleccionado.desface?.toFixed(1)} h</p>
+                  </div>
                 </div>
               </div>
 
-              <div className="space-y-4 bg-[#f8f9fa] p-4 border border-[#d3d7d9] rounded-sm text-center">
+              {/* ENTRADA DE TRANSACCIÓN */}
+              <div className="space-y-4 bg-[#f8f9fa] p-4 border border-[#d3d7d9] rounded-sm text-center leading-none">
                 <h4 className="text-[10px] font-black text-[#6a6d70] uppercase border-b border-[#d3d7d9] pb-1 flex items-center gap-2 leading-none">
-                  <RefreshCw size={12} /> Entrada de Transacción
+                  <RefreshCw size={12} /> Entrada de Horometro
                 </h4>
                 <div className="space-y-3">
                   <div className="text-left leading-none">
@@ -277,11 +293,11 @@ export default function EstadoGeneralPage() {
                   <div className="grid grid-cols-2 gap-3 text-left leading-none">
                     <div>
                       <label className="text-[10px] font-bold text-[#6a6d70] uppercase ml-1 leading-none">H. Anterior</label>
-                      <div className="bg-[#e9ecef] p-2 text-sm font-mono font-bold text-slate-500 border border-[#d3d7d9] rounded-sm text-center">{form.inicio}</div>
+                      <div className="bg-[#e9ecef] p-2 text-sm font-mono font-bold text-slate-500 border border-[#d3d7d9] rounded-sm text-center leading-none">{form.inicio}</div>
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-[#0070b1] uppercase ml-1 leading-none">H. Nueva</label>
-                      <input type="number" step="0.1" value={form.final} onChange={(e) => setForm({ ...form, final: e.target.value })} className="w-full border-2 border-[#0070b1] p-2 text-sm font-mono font-black text-[#0070b1] outline-none rounded-sm bg-white text-center" placeholder="0.0" />
+                      <input type="number" step="0.1" value={form.final} onChange={(e) => setForm({ ...form, final: e.target.value })} className="w-full border-2 border-[#0070b1] p-2 text-sm font-mono font-black text-[#0070b1] outline-none rounded-sm bg-white text-center leading-none" placeholder="0.0" />
                     </div>
                   </div>
                   <button onClick={guardarLectura} disabled={enviando} className="w-full bg-[#0070b1] hover:bg-[#005a8e] text-white py-3 text-xs font-black uppercase rounded-sm transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 shadow-sm leading-none">
@@ -290,23 +306,23 @@ export default function EstadoGeneralPage() {
                 </div>
               </div>
 
-              <div className="space-y-2 text-left">
+              <div className="space-y-2 text-left leading-none">
                 <h4 className="text-[10px] font-black text-[#6a6d70] uppercase flex items-center gap-2 px-1 leading-none"><History size={12} /> Registro de Cambios</h4>
-                <div className="border border-[#d3d7d9] rounded-sm overflow-hidden shadow-sm">
-                  <table className="w-full text-[10px]">
+                <div className="border border-[#d3d7d9] rounded-sm overflow-hidden shadow-sm leading-none">
+                  <table className="w-full text-[10px] leading-none">
                     <thead className="bg-[#f2f4f5] text-[#6a6d70] border-b border-[#d3d7d9]">
                       <tr className="leading-none text-left">
-                        <th className="p-2 font-bold uppercase text-left">Lectura</th>
-                        <th className="p-2 font-bold uppercase text-left">Variación</th>
-                        <th className="p-2 font-bold uppercase text-left">Fecha</th>
+                        <th className="p-2 font-bold uppercase text-left leading-none">Lectura</th>
+                        <th className="p-2 font-bold uppercase text-left leading-none">Variación</th>
+                        <th className="p-2 font-bold uppercase text-left leading-none">Fecha</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white text-left">
+                    <tbody className="divide-y divide-slate-100 bg-white text-left leading-none">
                       {historialModal.map(h => (
-                        <tr key={h.id} className="hover:bg-[#f7f9fa] transition-all font-mono leading-none">
-                          <td className="p-2 text-[#0070b1] font-bold text-left">{h.horaFinal} h</td>
-                          <td className="p-2 text-emerald-600 text-left">+{h.horasOperacion} h</td>
-                          <td className="p-2 text-slate-400 text-left">{new Date(h.created_at).toLocaleDateString()}</td>
+                        <tr key={h.id} className="hover:bg-[#f7f9fa] transition-all font-mono leading-none text-left">
+                          <td className="p-2 text-[#0070b1] font-bold text-left leading-none">{h.horaFinal} h</td>
+                          <td className="p-2 text-emerald-600 text-left leading-none">+{h.horasOperacion} h</td>
+                          <td className="p-2 text-slate-400 text-left leading-none">{new Date(h.created_at).toLocaleDateString()}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -325,7 +341,7 @@ export default function EstadoGeneralPage() {
       {/* SAP HELP MODAL */}
       {isHelpModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 leading-none">
-          <div className="bg-white w-full max-w-sm rounded-sm shadow-2xl overflow-hidden border border-[#d3d7d9] animate-in zoom-in-95 leading-none">
+          <div className="bg-white w-full max-sm rounded-sm shadow-2xl overflow-hidden border border-[#d3d7d9] animate-in zoom-in-95 leading-none">
             <div className="bg-[#354a5f] p-4 flex justify-between items-center text-white text-left leading-none">
               <div className="flex items-center gap-2 leading-none text-left"><HelpCircle size={18} /><h3 className="font-bold text-xs uppercase tracking-widest leading-none">Atajos S/4HANA</h3></div>
               <X size={20} className="cursor-pointer hover:opacity-70" onClick={() => setIsHelpModalOpen(false)} />
@@ -335,11 +351,8 @@ export default function EstadoGeneralPage() {
               <ShortcutRow keys="CTRL + 2" label="Módulo: DB Repuestos" />
               <ShortcutRow keys="CTRL + 3" label="Módulo: Monitor Estatus" />
               <ShortcutRow keys="CTRL + 4" label="Módulo: Inventario" />
-              <div className="h-px bg-slate-100 my-2" />
               <ShortcutRow keys="ALT + S" label="Búsqueda Rápida [Foco]" />
-              <ShortcutRow keys="ALT + X" label="Limpiar Todos los Filtros" />
               <ShortcutRow keys="ALT + Q" label="Refrescar Datos Servidor" />
-              <ShortcutRow keys="ALT + H" label="Menú de Ayuda" />
             </div>
           </div>
         </div>
