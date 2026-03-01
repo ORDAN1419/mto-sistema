@@ -7,16 +7,11 @@ import jsPDF from 'jspdf'
 import {
   ArrowLeft, Search, Gauge, Truck, X, Save, Loader2, History,
   ChevronRight, ArrowUpCircle, Clock, Wrench, ShieldCheck, ShieldAlert,
-  LayoutGrid,
-  RefreshCw, Box, Activity, Target, AlertOctagon, CheckCircle2,
+  LayoutGrid, RefreshCw, Box, Activity, Target, AlertOctagon, CheckCircle2,
   MapPin, ClipboardList, Construction, LogOut, FileText, HelpCircle,
-  Settings2, CalendarDays, Zap,
-  Settings,
-  Layers,
-  Calendar
+  Settings2, CalendarDays, Zap, Settings, Layers, Calendar, ListFilter
 } from 'lucide-react'
 
-// ✅ FUNCIÓN PARA OBTENER FECHA LOCAL REAL
 const obtenerFechaHoyLocal = () => {
   const ahora = new Date();
   const anio = ahora.getFullYear();
@@ -68,11 +63,14 @@ export default function EstadoGeneralPage() {
   const [enviando, setEnviando] = useState(false)
   const [historialModal, setHistorialModal] = useState<any[]>([])
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false)
+  const [showVencidosModal, setShowVencidosModal] = useState(false);
 
-  // --- ✅ NUEVOS ESTADOS PARA MAESTRO ---
   const [showEjesModal, setShowEjesModal] = useState(false)
   const [nuevaConfigEjes, setNuevaConfigEjes] = useState('')
-  const [nuevaFrecuencia, setNuevaFrecuencia] = useState<string>('') // Nuevo estado frecuencia
+  const [nuevaFrecuencia, setNuevaFrecuencia] = useState<string>('')
+
+  const [showVisualLlantas, setShowVisualLlantas] = useState(false)
+  const [montajeVisual, setMontajeVisual] = useState<any[]>([])
 
   // --- 2. FUNCIONES ---
   const fetchEstadoActual = useCallback(async () => {
@@ -103,33 +101,29 @@ export default function EstadoGeneralPage() {
     setHistorialModal(data || [])
   }, [])
 
-  // --- ✅ FUNCIÓN ACTUALIZADA PARA GUARDAR EJES Y FRECUENCIA ---
+  const abrirVisualizacionLlantas = async () => {
+    if (!equipoSeleccionado) return;
+    setLoading(true);
+    const { data } = await supabase.from('v_neumaticos_estado_actual').select('*').eq('placa', equipoSeleccionado.placaRodaje);
+    setMontajeVisual(data || []);
+    setShowVisualLlantas(true);
+    setLoading(false);
+  }
+
   const guardarConfigMaestro = async () => {
     if (!equipoSeleccionado) return;
     setEnviando(true);
     try {
-      const { error } = await supabase
-        .from('maestroEquipos')
-        .update({
-          configuracion_ejes: nuevaConfigEjes,
-          frecuencia: nuevaFrecuencia ? parseInt(nuevaFrecuencia) : equipoSeleccionado.frecuencia
-        })
-        .eq('placaRodaje', equipoSeleccionado.placaRodaje);
-
+      const { error } = await supabase.from('maestroEquipos').update({
+        configuracion_ejes: nuevaConfigEjes,
+        frecuencia: nuevaFrecuencia ? parseInt(nuevaFrecuencia) : equipoSeleccionado.frecuencia
+      }).eq('placaRodaje', equipoSeleccionado.placaRodaje);
       if (error) throw error;
       alert("✅ Datos maestros actualizados");
       setShowEjesModal(false);
       fetchEstadoActual();
-      setEquipoSeleccionado({
-        ...equipoSeleccionado,
-        configuracion_ejes: nuevaConfigEjes,
-        frecuencia: nuevaFrecuencia ? parseInt(nuevaFrecuencia) : equipoSeleccionado.frecuencia
-      });
-    } catch (err) {
-      alert("Error al actualizar maestro");
-    } finally {
-      setEnviando(false);
-    }
+      setEquipoSeleccionado({ ...equipoSeleccionado, configuracion_ejes: nuevaConfigEjes, frecuencia: nuevaFrecuencia ? parseInt(nuevaFrecuencia) : equipoSeleccionado.frecuencia });
+    } catch (err) { alert("Error al actualizar maestro"); } finally { setEnviando(false); }
   }
 
   // --- 3. EFFECTS ---
@@ -144,31 +138,30 @@ export default function EstadoGeneralPage() {
       if (e.ctrlKey && e.key === '0') { e.preventDefault(); router.push('/equipos'); }
       if (e.altKey && e.key.toLowerCase() === 's') { e.preventDefault(); inputBusquedaRef.current?.focus(); }
       if (e.altKey && e.key.toLowerCase() === 'h') { e.preventDefault(); setIsHelpModalOpen(p => !p); }
-
-      // ✅ MODIFICADO: AHORA ALT + X TAMBIÉN BORRA EL TEXTO DEL INPUT
       if (e.altKey && e.key.toLowerCase() === 'x') {
         e.preventDefault();
         setBusqueda('');
         setFiltroKPI('TODOS');
         if (inputBusquedaRef.current) inputBusquedaRef.current.value = '';
       }
-
       if (e.altKey && e.key.toLowerCase() === 'q') { e.preventDefault(); fetchEstadoActual(); }
+      if ((e.key === 'Enter' || e.key === 'Escape') && showVisualLlantas) setShowVisualLlantas(false);
+      if (e.key === 'Escape' && showVencidosModal) setShowVencidosModal(false);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [router, fetchEstadoActual]);
+  }, [router, fetchEstadoActual, showVisualLlantas, showVencidosModal]);
 
   useEffect(() => {
     if (equipoSeleccionado) {
       fetchHistorial(equipoSeleccionado.placaRodaje);
       setForm({ inicio: equipoSeleccionado.horometroMayor?.toString() || '0', final: '', fecha: obtenerFechaHoyLocal() })
       setNuevaConfigEjes(equipoSeleccionado.configuracion_ejes || '')
-      setNuevaFrecuencia(equipoSeleccionado.frecuencia?.toString() || '') // Inicializar frecuencia
+      setNuevaFrecuencia(equipoSeleccionado.frecuencia?.toString() || '')
     }
   }, [equipoSeleccionado, fetchHistorial])
 
-  // --- 4. LÓGICA DE FILTRADO Y AGRUPACIÓN ---
+  // --- 4. LÓGICA DE MEMOS ---
   const kpiSalud = useMemo(() => {
     const gestionados = equipos.filter(e => e.desface !== null);
     if (gestionados.length === 0) return { saludable: 0, cumplimiento: 0, confiabilidad: 0, vencidos: 0 };
@@ -190,36 +183,43 @@ export default function EstadoGeneralPage() {
       const matchBusqueda = !q || e.placaRodaje?.toLowerCase().includes(q) || e.codigoEquipo?.toLowerCase().includes(q) || e.descripcionEquipo?.toLowerCase().includes(q);
       return pasaKPI && matchBusqueda;
     });
-
     const grupos: Record<string, EquipoEstado[]> = {};
     filtrados.filter(e => e.desface !== null).forEach(eq => {
       const cat = (eq.descripcionEquipo || 'OTROS').toUpperCase();
       if (!grupos[cat]) grupos[cat] = [];
       grupos[cat].push(eq);
     });
-
     Object.keys(grupos).forEach(key => { grupos[key].sort((a, b) => (a.desface || 0) - (b.desface || 0)); });
     return grupos;
   }, [equipos, filtroKPI, busqueda]);
 
+  const reporteAgrupadoVencidos = useMemo(() => {
+    const vencidos = equipos.filter(e => e.desface !== null && e.desface <= 0)
+      .sort((a, b) => (a.desface || 0) - (b.desface || 0));
+
+    const grupos: Record<string, EquipoEstado[]> = {};
+    vencidos.forEach(eq => {
+      const cat = (eq.descripcionEquipo || 'OTROS').toUpperCase();
+      if (!grupos[cat]) grupos[cat] = [];
+      grupos[cat].push(eq);
+    });
+    return grupos;
+  }, [equipos]);
+
   const guardarLectura = async () => {
     if (!equipoSeleccionado) return;
-    const hInicio = Number(form.inicio);
     const hFinal = Number(form.final);
-    if (!form.final || hFinal <= hInicio) { alert("La nueva lectura debe ser mayor a la anterior"); return; }
+    if (!form.final || hFinal <= Number(form.inicio)) { alert("La nueva lectura debe ser mayor a la anterior"); return; }
     setEnviando(true);
     try {
       const ts = new Date().toISOString();
-      await supabase.from('horometro').insert([{ placaRodaje: equipoSeleccionado.placaRodaje, horaInicio: hInicio, horaFinal: hFinal, horasOperacion: hFinal - hInicio, horometroMayor: hFinal, created_at: ts }]);
-      await supabase.from('reporte_diario').insert([{ placa_rodaje: equipoSeleccionado.placaRodaje, fecha: form.fecha, horometro_inicial: hInicio, horometro_final: hFinal, descripcion: 'Actualización SAP Sync' }]);
+      await supabase.from('horometro').insert([{ placaRodaje: equipoSeleccionado.placaRodaje, horaInicio: Number(form.inicio), horaFinal: hFinal, horasOperacion: hFinal - Number(form.inicio), horometroMayor: hFinal, created_at: ts }]);
       await supabase.from('maestroEquipos').update({ horometroMayor: hFinal, ultima_fecha: ts }).eq('placaRodaje', equipoSeleccionado.placaRodaje);
       await fetchEstadoActual();
       setEquipoSeleccionado(null);
       alert("✅ Horómetro sincronizado");
     } catch (err) { alert("Error al guardar") } finally { setEnviando(false) }
   }
-
-  if (loading) return <div className="min-h-screen flex items-center justify-center bg-[#f7f9fa]"><RefreshCw className="animate-spin text-[#0070b1]" size={40} /></div>
 
   return (
     <main className="min-h-screen bg-[#f7f9fa] text-[#32363a] font-sans text-left leading-none">
@@ -229,29 +229,33 @@ export default function EstadoGeneralPage() {
           <div className="h-6 w-px bg-white/20" />
           <span className="font-bold text-xs tracking-wider uppercase italic leading-none">Monitor de las unidades</span>
         </div>
-        <div className="flex items-center gap-6 text-left leading-none">
-          <div className="relative leading-none">
+        <div className="flex items-center gap-4 text-left leading-none">
+          {/* BOTÓN REPORTE CRÍTICO */}
+          <button
+            onClick={() => setShowVencidosModal(true)}
+            className="flex items-center gap-2 bg-rose-600 hover:bg-rose-700 text-white px-3 py-1.5 rounded-sm text-[10px] font-black uppercase transition-all shadow-lg active:scale-95"
+          >
+            <ListFilter size={14} />
+            Reporte Crítico
+          </button>
+
+          <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-white/50" size={14} />
-            <input
-              ref={inputBusquedaRef}
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-              className="bg-white/10 border border-white/20 rounded-sm py-1 pl-8 pr-2 text-xs outline-none focus:bg-white focus:text-slate-900 transition-all w-64 font-bold"
-              placeholder="Buscar Placa o Grupo..."
-            />
+            <input ref={inputBusquedaRef} onChange={(e) => setBusqueda(e.target.value)} className="bg-white/10 border border-white/20 rounded-sm py-1 pl-8 pr-2 text-xs outline-none focus:bg-white focus:text-slate-900 transition-all w-64 font-bold" placeholder="Buscar Placa o Grupo..." />
           </div>
           <HelpCircle size={18} className="cursor-pointer opacity-80 hover:opacity-100" onClick={() => setIsHelpModalOpen(true)} />
         </div>
       </nav>
 
       <div className="p-4 flex gap-4">
+        {/* GRILLA IZQUIERDA */}
         <div className={`transition-all duration-300 ${equipoSeleccionado ? 'w-2/3' : 'w-full'} space-y-4`}>
           <div className="grid grid-cols-4 gap-2">
             <SapKpiTile label="Índice Salud" value={`${kpiSalud.saludable}%`} color="emerald" active={filtroKPI === 'SALUDABLE'} onClick={() => setFiltroKPI('SALUDABLE')} />
             <SapKpiTile label="Cumplimiento" value={`${kpiSalud.cumplimiento}%`} color="blue" active={filtroKPI === 'CUMPLIMIENTO'} onClick={() => setFiltroKPI('CUMPLIMIENTO')} />
             <div className="bg-white border border-[#d3d7d9] p-3 rounded-sm shadow-sm text-left">
               <p className="text-[10px] font-bold text-[#6a6d70] uppercase leading-none mb-1">Disponibilidad</p>
-              <p className="text-xl font-light text-[#0070b1] leading-none font-mono">{kpiSalud.confiabilidad}%</p>
+              <p className="text-xl font-light text-[#0070b1] font-mono">{kpiSalud.confiabilidad}%</p>
             </div>
             <SapKpiTile label="Vencidos" value={kpiSalud.vencidos} color="rose" active={filtroKPI === 'RIESGO'} onClick={() => setFiltroKPI('RIESGO')} />
           </div>
@@ -262,21 +266,16 @@ export default function EstadoGeneralPage() {
                 <LayoutGrid size={14} />
                 <span className="text-[11px] font-bold uppercase tracking-tight leading-none">Visión General de Flota</span>
               </div>
-              <button
-                onClick={() => { setFiltroKPI('TODOS'); setBusqueda(''); }}
-                className="text-[10px] text-[#0070b1] font-bold hover:underline uppercase leading-none"
-              >
-                Reiniciar Filtros
-              </button>
+              <button onClick={() => { setFiltroKPI('TODOS'); setBusqueda(''); }} className="text-[10px] text-[#0070b1] font-bold hover:underline uppercase leading-none">Reiniciar Filtros</button>
             </div>
 
             <div className="p-4 max-h-[calc(100vh-220px)] overflow-y-auto space-y-6 text-left bg-white">
               {Object.entries(equiposAgrupados).map(([grupo, lista]) => (
                 <div key={grupo} className="space-y-2">
-                  <div className="flex items-center gap-2 border-b border-[#f2f4f5] pb-1 leading-none">
-                    <Box size={12} className="text-[#0070b1]" />
-                    <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none">{grupo}</h3>
-                    <div className="h-px flex-grow bg-[#f2f4f5]" />
+                  <div className="flex items-center gap-2 border-b border-slate-100 pb-1 leading-none">
+                    <Box size={12} className="text-slate-300" />
+                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">{grupo}</h3>
+                    <div className="h-px flex-grow border-b border-dashed border-slate-300/60" />
                   </div>
                   <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-10 gap-1">
                     {lista.map(eq => {
@@ -295,6 +294,7 @@ export default function EstadoGeneralPage() {
           </div>
         </div>
 
+        {/* PANEL LATERAL DETALLE */}
         {equipoSeleccionado && (
           <div className="w-1/3 bg-white border border-[#d3d7d9] shadow-xl rounded-sm flex flex-col animate-in slide-in-from-right duration-300">
             <div className="p-4 border-b border-[#d3d7d9] bg-[#f7f9fa] flex justify-between items-center text-left leading-none">
@@ -308,121 +308,70 @@ export default function EstadoGeneralPage() {
             <div className="p-5 space-y-6 overflow-y-auto">
               <div className="space-y-3 bg-[#eff4f9] p-4 border border-[#b0ccf0] rounded-sm text-left">
                 <div className="flex justify-between items-center border-b border-[#b0ccf0] pb-2 mb-3">
-                  <h4 className="text-[10px] font-black text-[#0070b1] uppercase flex items-center gap-2 leading-none">
-                    <Settings2 size={12} /> Planificación de Mantenimiento
-                  </h4>
-                  <button
-                    onClick={() => setShowEjesModal(true)}
-                    className="p-1 hover:bg-[#0070b1] hover:text-white rounded-sm transition-all text-[#0070b1]"
-                    title="Ajustes de Maestro"
-                  >
-                    <Settings size={14} />
-                  </button>
+                  <h4 className="text-[10px] font-black text-[#0070b1] uppercase flex items-center gap-2 leading-none"><Settings2 size={12} /> Planificación</h4>
+                  <button onClick={() => setShowEjesModal(true)} className="p-1 hover:bg-[#0070b1] hover:text-white rounded-sm text-[#0070b1] transition-all"><Settings size={14} /></button>
                 </div>
-
-                <div className="grid grid-cols-2 gap-4 text-left leading-none">
-                  <div>
-                    <p className="text-[9px] font-bold text-[#6a6d70] uppercase mb-1 leading-none">Último MP</p>
-                    <div className="flex items-center gap-2 text-[#32363a]">
-                      <Zap size={12} className="text-emerald-600" />
-                      <span className="text-xs font-black uppercase">{equipoSeleccionado.tipoMpUlt || 'N/A'}</span>
+                <div className="grid grid-cols-2 gap-4 text-left leading-none border-b border-[#b0ccf0]/50 pb-3">
+                  <div className="flex flex-col items-start text-left">
+                    <p className="text-[9px] font-bold text-[#6a6d70] uppercase mb-1 leading-none tracking-wide">Último MP Ejecutado</p>
+                    <div className="flex items-center gap-2 text-[#32363a] font-bold text-xs tracking-tight">
+                      <Zap size={12} className="text-emerald-600 fill-emerald-600/10" />
+                      <span className="font-sans antialiased uppercase">{equipoSeleccionado.tipoMpUlt || 'N/A'}</span>
                     </div>
                   </div>
                   <div>
-                    <p className="text-[9px] font-bold text-[#6a6d70] uppercase mb-1 leading-none">Frecuencia Plan</p>
-                    <div className="flex items-center gap-2 text-[#32363a]">
-                      <CalendarDays size={12} className="text-blue-600" />
-                      <span className="text-xs font-black uppercase">{equipoSeleccionado.frecuencia ? `${equipoSeleccionado.frecuencia} h` : 'N/A'}</span>
-                    </div>
+                    <p className="text-[9px] font-bold text-[#6a6d70] uppercase mb-1">Frecuencia</p>
+                    <div className="flex items-center gap-2 text-[#32363a] font-black text-xs uppercase italic tracking-tight leading-none"><CalendarDays size={12} className="text-blue-600" /> {equipoSeleccionado.frecuencia ? `${equipoSeleccionado.frecuencia} h` : 'N/A'}</div>
                   </div>
                 </div>
-
-                <div className="mt-2 py-2 border-y border-[#b0ccf0]/50">
-                  <p className="text-[9px] font-bold text-[#6a6d70] uppercase mb-1 leading-none">Estado Último MP</p>
+                <div className="mt-2 py-2 border-b border-[#b0ccf0]/50">
+                  <p className="text-[9px] font-bold text-[#6a6d70] uppercase mb-1">Estado Último MP</p>
                   <div className="flex items-center gap-2 text-[#32363a]">
                     <Calendar size={12} className="text-[#0070b1]" />
-                    <span className="text-[11px] font-black uppercase font-mono">
+                    <span className="text-[11px] font-black font-mono">
                       {equipoSeleccionado.FechUltMp ? `${new Date(equipoSeleccionado.FechUltMp).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' })}` : '---'}
                       {equipoSeleccionado.kmHodoUltiMp ? ` | ${equipoSeleccionado.kmHodoUltiMp} H` : ''}
                     </span>
                   </div>
                 </div>
-
-                <div className="grid grid-cols-2 gap-2 mt-2 text-left leading-none">
-                  <div className="p-3 bg-white border border-[#d3d7d9] rounded-sm">
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <div className="p-3 bg-white border border-[#d3d7d9] rounded-sm flex flex-col items-center justify-center text-center">
                     <p className="text-[9px] font-bold text-[#6a6d70] uppercase mb-1 flex items-center gap-1 leading-none"><Clock size={10} /> Próx. {equipoSeleccionado.tipoProxMp || 'MP'}</p>
                     <p className="text-sm font-black text-slate-700 font-mono leading-none">{equipoSeleccionado.ProxHoroKmMp || 'N/A'}</p>
                   </div>
-                  <div className={`p-3 border rounded-sm ${equipoSeleccionado.desface! <= 0 ? 'bg-rose-50 border-rose-200' : 'bg-emerald-50 border-emerald-200'}`}>
-                    <p className="text-[9px] font-bold text-[#6a6d70] uppercase mb-1 leading-none text-left tracking-tighter">Estado Desfase</p>
-                    <p className={`text-sm font-black font-mono leading-none text-left ${equipoSeleccionado.desface! <= 0 ? 'text-rose-600' : 'text-emerald-700'}`}>{equipoSeleccionado.desface?.toFixed(1)} h</p>
+                  <div className={`p-3 border rounded-sm flex flex-col items-center justify-center text-center ${equipoSeleccionado.desface! <= 0 ? 'bg-rose-50 border-rose-200' : 'bg-emerald-50 border-emerald-200'}`}>
+                    <p className="text-[9px] font-bold text-[#6a6d70] uppercase mb-1 leading-none tracking-tighter">Estado Desfase</p>
+                    <p className={`text-sm font-black font-mono leading-none ${equipoSeleccionado.desface! <= 0 ? 'text-rose-600' : 'text-emerald-700'}`}>{equipoSeleccionado.desface?.toFixed(1)} h</p>
                   </div>
                 </div>
               </div>
 
-              <div className="bg-white p-4 border border-[#d3d7d9] rounded-sm shadow-sm space-y-3 text-left">
-                <h4 className="text-[10px] font-black text-slate-500 uppercase flex items-center gap-2 border-b border-slate-100 pb-2 leading-none">
-                  <Layers size={12} className="text-[#0070b1]" /> Configuración de Neumáticos
-                </h4>
-                <div className="flex justify-between items-center leading-none">
-                  <div>
-                    <p className="text-[9px] font-bold text-slate-400 uppercase mb-1 leading-none">Esquema de Ejes</p>
-                    <p className="text-xs font-black text-[#32363a] uppercase">
-                      {equipoSeleccionado.configuracion_ejes || 'NO CONFIGURADO'}
-                    </p>
-                  </div>
+              <div onClick={abrirVisualizacionLlantas} className="bg-white p-4 border border-[#d3d7d9] rounded-sm shadow-sm space-y-3 cursor-pointer hover:border-[#0070b1] transition-all group text-left leading-none">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                  <h4 className="text-[10px] font-black text-slate-500 uppercase flex items-center gap-2 leading-none"><Layers size={12} className="text-[#0070b1]" /> Configuración de Neumáticos</h4>
+                  <ChevronRight size={14} className="text-slate-300 group-hover:text-[#0070b1]" />
+                </div>
+                <div className="flex justify-between items-end leading-none">
+                  <div><p className="text-[9px] font-bold text-slate-400 uppercase mb-1 leading-none">Esquema Actual</p><p className="text-xs font-black text-[#32363a] uppercase">{equipoSeleccionado.configuracion_ejes || 'PENDIENTE'}</p></div>
+                  <div className="bg-[#f2f4f5] px-2 py-1 text-[8px] font-black text-[#0070b1] border border-[#d3d7d9]">VER DETALLE</div>
                 </div>
               </div>
 
-              {/* ENTRADA DE TRANSACCIÓN HORÓMETRO */}
               <div className="space-y-4 bg-[#f8f9fa] p-4 border border-[#d3d7d9] rounded-sm text-center leading-none">
-                <h4 className="text-[10px] font-black text-[#6a6d70] uppercase border-b border-[#d3d7d9] pb-1 flex items-center gap-2 leading-none text-left">
-                  <RefreshCw size={12} /> Entrada de Horometro
-                </h4>
-                <div className="space-y-3">
-                  <div className="text-left leading-none">
-                    <label className="text-[10px] font-bold text-[#6a6d70] uppercase ml-1 leading-none">Fecha Sincronización</label>
-                    <input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} className="w-full border border-[#b0b3b5] p-2 text-xs rounded-sm outline-none focus:border-[#0070b1] bg-white font-bold" />
+                <h4 className="text-[10px] font-black text-[#6a6d70] uppercase border-b border-[#d3d7d9] pb-1 text-left flex items-center gap-2 leading-none"><RefreshCw size={12} /> Entrada Horómetro</h4>
+                <div className="space-y-3 text-left">
+                  <input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} className="w-full border p-2 text-xs rounded-sm font-bold focus:border-[#0070b1] outline-none" />
+                  <div className="grid grid-cols-2 gap-3 leading-none">
+                    <div><label className="text-[9px] font-bold text-slate-400 uppercase leading-none">Anterior</label><div className="bg-slate-100 p-2 text-sm font-mono font-bold text-slate-500 border rounded-sm text-center">{equipoSeleccionado.horometroMayor}</div></div>
+                    <div><label className="text-[9px] font-bold text-[#0070b1] uppercase font-black leading-none">Nueva</label><input type="number" step="0.1" value={form.final} onChange={(e) => setForm({ ...form, final: e.target.value })} className="w-full border-2 border-[#0070b1] p-2 text-sm font-mono font-black text-[#0070b1] outline-none rounded-sm bg-white text-center" /></div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3 text-left leading-none">
-                    <div>
-                      <label className="text-[10px] font-bold text-[#6a6d70] uppercase ml-1 leading-none">H. Anterior</label>
-                      <div className="bg-[#e9ecef] p-2 text-sm font-mono font-bold text-slate-500 border border-[#d3d7d9] rounded-sm text-center leading-none">{form.inicio}</div>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-[#0070b1] uppercase ml-1 leading-none">H. Nueva</label>
-                      <input type="number" step="0.1" value={form.final} onChange={(e) => setForm({ ...form, final: e.target.value })} className="w-full border-2 border-[#0070b1] p-2 text-sm font-mono font-black text-[#0070b1] outline-none rounded-sm bg-white text-center leading-none" placeholder="0.0" />
-                    </div>
-                  </div>
-                  <button onClick={guardarLectura} disabled={enviando} className="w-full bg-[#0070b1] hover:bg-[#005a8e] text-white py-3 text-xs font-black uppercase rounded-sm transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 shadow-sm leading-none">
+                  <button onClick={guardarLectura} disabled={enviando} className="w-full bg-[#0070b1] hover:bg-[#005a8e] text-white py-3 text-xs font-black uppercase rounded-sm transition-all flex items-center justify-center gap-2">
                     {enviando ? <Loader2 className="animate-spin" size={16} /> : <><Save size={16} /> Contabilizar</>}
                   </button>
                 </div>
               </div>
 
-              <div className="space-y-2 text-left leading-none">
-                <h4 className="text-[10px] font-black text-[#6a6d70] uppercase flex items-center gap-2 px-1 leading-none"><History size={12} /> Registro de Cambios</h4>
-                <div className="border border-[#d3d7d9] rounded-sm overflow-hidden shadow-sm leading-none">
-                  <table className="w-full text-[10px] leading-none text-left">
-                    <thead className="bg-[#f2f4f5] text-[#6a6d70] border-b border-[#d3d7d9]">
-                      <tr className="leading-none text-left">
-                        <th className="p-2 font-bold uppercase text-left leading-none">Lectura</th>
-                        <th className="p-2 font-bold uppercase text-left leading-none">Fecha</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white text-left leading-none">
-                      {historialModal.map(h => (
-                        <tr key={h.id} className="hover:bg-[#f7f9fa] transition-all font-mono font-bold leading-none text-left">
-                          <td className="p-2 text-[#0070b1] font-bold text-left leading-none">{h.horaFinal} h</td>
-                          <td className="p-2 text-slate-400 text-left leading-none">{new Date(h.created_at).toLocaleDateString()}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <button onClick={() => router.push(`/eventos?placa=${equipoSeleccionado.placaRodaje}`)} className="w-full py-3 border-2 border-slate-800 text-slate-800 rounded-sm font-black text-[10px] uppercase flex items-center justify-center gap-3 hover:bg-slate-800 hover:text-white transition-all shadow-sm leading-none tracking-widest">
+              <button onClick={() => router.push(`/eventos?placa=${equipoSeleccionado.placaRodaje}`)} className="w-full py-3 border-2 border-slate-800 text-slate-800 rounded-sm font-black text-[10px] uppercase flex items-center justify-center gap-3 hover:bg-slate-800 hover:text-white transition-all tracking-widest leading-none">
                 <Construction size={16} /> Crear Orden Intervención
               </button>
             </div>
@@ -430,60 +379,145 @@ export default function EstadoGeneralPage() {
         )}
       </div>
 
-      {/* ✅ MODAL DE CONFIGURACIÓN DE MAESTRO (ACTUALIZADO CON FRECUENCIA) */}
-      {showEjesModal && equipoSeleccionado && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 leading-none text-left">
-          <div className="bg-white w-full max-w-xs rounded-sm shadow-2xl overflow-hidden border border-[#d3d7d9] animate-in zoom-in-95 leading-none">
-            <div className="bg-[#354a5f] p-3 flex justify-between items-center text-white text-left leading-none">
-              <div className="flex items-center gap-2 leading-none text-left">
-                <Settings size={14} />
-                <h3 className="font-bold text-[10px] uppercase tracking-widest leading-none">Ajustes: {equipoSeleccionado.placaRodaje}</h3>
+      {/* ✅ MODAL REPORTE CRÍTICO AGRUPADO */}
+      {showVencidosModal && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in duration-300">
+          <div className="bg-white w-full max-w-5xl rounded-sm shadow-[0_20px_60px_rgba(0,0,0,0.4)] border border-rose-300 overflow-hidden flex flex-col max-h-[95vh] text-left">
+            <div className="bg-rose-700 p-5 flex justify-between items-center text-white shadow-xl">
+              <div className="flex items-center gap-4">
+                <AlertOctagon size={28} className="animate-pulse" />
+                <div>
+                  <h3 className="font-black text-lg uppercase tracking-tight leading-none mb-1">Reporte Ejecutivo: Unidades Fuera de Rango</h3>
+                  <p className="text-[11px] opacity-80 font-bold uppercase tracking-wider">Flota en Alerta de Mantenimiento | SAP S/4HANA Sync</p>
+                </div>
               </div>
-              <X size={16} className="cursor-pointer hover:opacity-70" onClick={() => setShowEjesModal(false)} />
+              <button onClick={() => setShowVencidosModal(false)} className="hover:bg-white/20 p-2 rounded-full transition-all active:scale-90"><X size={30} /></button>
             </div>
-            <div className="p-5 space-y-4 text-left leading-none bg-white">
-              {/* SELECCIÓN DE EJES */}
-              <div className="space-y-1">
+
+            <div className="flex-grow overflow-auto p-6 bg-[#f7f9fa] space-y-8">
+              {Object.keys(reporteAgrupadoVencidos).length > 0 ? (
+                Object.entries(reporteAgrupadoVencidos).map(([grupo, lista]) => (
+                  <div key={grupo} className="bg-white border border-slate-200 rounded-sm shadow-sm overflow-hidden animate-in slide-in-from-bottom-4">
+                    <div className="bg-slate-100 px-4 py-2 border-b flex items-center gap-2">
+                      <Box size={14} className="text-slate-500" />
+                      <h4 className="font-black text-[11px] text-slate-600 uppercase tracking-widest">{grupo}</h4>
+                      <span className="bg-rose-600 text-white text-[9px] font-black px-2 py-0.5 rounded-full">{lista.length}</span>
+                    </div>
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="text-[10px] font-black text-slate-400 uppercase bg-slate-50/50">
+                          <th className="px-6 py-3">Placa</th>
+                          <th className="px-6 py-3">ID Equipo</th>
+                          <th className="px-6 py-3 text-center">Desfase (Hrs)</th>
+                          <th className="px-6 py-3 text-center">Plan Prev.</th>
+                          <th className="px-6 py-3">Estatus Crítico</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-[11px] divide-y divide-slate-100">
+                        {lista.map((eq) => (
+                          <tr key={eq.placaRodaje} className="hover:bg-rose-50/30 transition-colors">
+                            <td className="px-6 py-3 font-black text-[#0070b1] font-mono border-l-4 border-rose-500 uppercase">{eq.placaRodaje}</td>
+                            <td className="px-6 py-3 font-bold text-slate-500 uppercase italic">{eq.codigoEquipo}</td>
+                            <td className="px-6 py-3 text-center">
+                              <span className="bg-rose-100 text-rose-700 px-3 py-1 rounded-sm font-black font-mono border border-rose-200">
+                                {eq.desface?.toFixed(1)} h
+                              </span>
+                            </td>
+                            <td className="px-6 py-3 text-center font-bold text-slate-600">{eq.frecuencia || 'N/A'} h</td>
+                            <td className="px-6 py-3">
+                              <div className="flex items-center gap-2 font-black text-rose-600 uppercase italic text-[9px]">
+                                <ShieldAlert size={14} /> Servicio Excedido
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))
+              ) : (
+                <div className="flex flex-col items-center justify-center py-20 gap-4">
+                  <CheckCircle2 size={64} className="text-emerald-500" />
+                  <p className="font-black text-slate-400 uppercase text-lg tracking-widest">Flota Operativa al 100% - Sin Vencidos</p>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-[#354a5f] p-4 text-center text-white border-t-4 border-rose-600 flex justify-between items-center leading-none">
+              <p className="text-[10px] font-black uppercase tracking-widest italic leading-none">Documentación para Gerencia de Mantenimiento</p>
+              <div className="flex items-center gap-2 font-mono text-[10px] opacity-70 leading-none">
+                <Clock size={12} /> {new Date().toLocaleString()}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DISTRIBUCIÓN LLANTAS */}
+      {showVisualLlantas && equipoSeleccionado && (
+        <div className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4 animate-in zoom-in-95">
+          <div className="bg-white w-full max-w-2xl rounded-sm shadow-2xl overflow-hidden border-4 border-[#354a5f]">
+            <div className="bg-[#354a5f] p-4 flex justify-between items-center text-white">
+              <div className="flex items-center gap-3 text-left leading-none">
+                <Truck size={24} />
+                <div className="text-left leading-none">
+                  <h3 className="font-black text-sm uppercase tracking-tighter leading-none mb-1">{equipoSeleccionado.placaRodaje}</h3>
+                  <p className="text-[10px] uppercase opacity-70 font-bold leading-none">{equipoSeleccionado.descripcionEquipo}</p>
+                </div>
+              </div>
+              <X className="cursor-pointer hover:text-rose-500" size={24} onClick={() => setShowVisualLlantas(false)} />
+            </div>
+            <div className="p-12 bg-white flex flex-col items-center gap-10 overflow-y-auto max-h-[70vh]">
+              {equipoSeleccionado.configuracion_ejes?.split('-').map((llantasEnEje, ejeIdx) => {
+                const numLlantas = parseInt(llantasEnEje);
+                return (
+                  <div key={ejeIdx} className="flex flex-col items-center gap-2">
+                    <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">Eje {ejeIdx + 1}</span>
+                    <div className="flex items-center gap-24 relative">
+                      <div className="flex gap-1.5">{Array.from({ length: numLlantas / 2 }).map((_, i) => {
+                        const pos = numLlantas === 2 ? `${ejeIdx + 1}I` : `${ejeIdx + 1}I${i === 0 ? 'E' : 'I'}`;
+                        return <MiniTireVisual key={pos} pos={pos} info={montajeVisual.find(m => m.posicion === pos)} />;
+                      })}</div>
+                      <div className="absolute left-1/2 -translate-x-1/2 w-40 h-2 bg-[#f2f4f5] -z-10 rounded-full" />
+                      <div className="flex gap-1.5">{Array.from({ length: numLlantas / 2 }).map((_, i) => {
+                        const pos = numLlantas === 2 ? `${ejeIdx + 1}D` : `${ejeIdx + 1}D${i === (numLlantas / 2 - 1) ? 'E' : 'I'}`;
+                        return <MiniTireVisual key={pos} pos={pos} info={montajeVisual.find(m => m.posicion === pos)} />;
+                      })}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL AJUSTES MAESTRO */}
+      {showEjesModal && equipoSeleccionado && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 text-left animate-in zoom-in-95 leading-none">
+          <div className="bg-white w-full max-w-xs rounded-sm shadow-2xl overflow-hidden border border-[#d3d7d9]">
+            <div className="bg-[#354a5f] p-3 flex justify-between items-center text-white text-left">
+              <h3 className="font-bold text-[10px] uppercase tracking-widest leading-none">Ajustes Maestro</h3>
+              <X size={16} className="cursor-pointer" onClick={() => setShowEjesModal(false)} />
+            </div>
+            <div className="p-5 space-y-4 bg-white text-left">
+              <div className="space-y-1 text-left leading-none">
                 <label className="text-[9px] font-black text-slate-500 uppercase leading-none">Esquema Neumáticos</label>
-                <select
-                  value={nuevaConfigEjes}
-                  onChange={(e) => setNuevaConfigEjes(e.target.value)}
-                  className="w-full border border-[#b0b3b5] p-2 text-xs rounded-sm outline-none focus:border-[#0070b1] font-bold bg-[#f8f9fa]"
-                >
-                  <option value="">Seleccionar esquema...</option>
+                <select value={nuevaConfigEjes} onChange={(e) => setNuevaConfigEjes(e.target.value)} className="w-full border p-2 text-xs rounded-sm font-bold bg-[#f8f9fa] outline-none">
+                  <option value="">Seleccionar...</option>
                   <option value="2-4-4">Tracto 6x4 (2-4-4)</option>
                   <option value="2-2-4-4">Volvo 8x4 (2-2-4-4)</option>
                   <option value="2-2-2">Motoniveladora (2-2-2)</option>
                   <option value="2-4">Camión 4x2 (2-4)</option>
-                  <option value="2-2">Camioneta/Van (2-2)</option>
-                  <option value="4-4-4">Semirremolque S3 (4-4-4)</option>
-                  <option value="2-4-4-4">Tracto + Carreta (2-4-4-4)</option>
+                  <option value="2-2">Camioneta (2-2)</option>
+                  <option value="4-4-4">Carreta S3 (4-4-4)</option>
                 </select>
               </div>
-
-              {/* ✅ FORMULARIO DE FRECUENCIA MP */}
-              <div className="space-y-1">
-                <label className="text-[9px] font-black text-[#0070b1] uppercase leading-none">Frecuencia Preventivo (Hrs)</label>
-                <input
-                  type="number"
-                  value={nuevaFrecuencia}
-                  onChange={(e) => setNuevaFrecuencia(e.target.value)}
-                  placeholder="Ej: 250, 400..."
-                  className="w-full border-2 border-[#0070b1]/20 p-2 text-xs rounded-sm outline-none focus:border-[#0070b1] font-bold"
-                />
+              <div className="space-y-1 text-left leading-none">
+                <label className="text-[9px] font-black text-[#0070b1] uppercase leading-none">Frecuencia MP (Hrs)</label>
+                <input type="number" value={nuevaFrecuencia} onChange={(e) => setNuevaFrecuencia(e.target.value)} className="w-full border-2 border-[#0070b1]/20 p-2 text-xs rounded-sm outline-none font-bold" />
               </div>
-
-              <div className="p-3 bg-blue-50 border border-blue-100 rounded-sm">
-                <p className="text-[8px] text-blue-700 font-bold uppercase leading-tight italic text-center">
-                  Esta configuración actualiza los parámetros base del equipo en el Maestro.
-                </p>
-              </div>
-
-              <button
-                onClick={guardarConfigMaestro}
-                disabled={enviando}
-                className="w-full bg-[#0070b1] hover:bg-[#005a8e] text-white py-2.5 text-[10px] font-black uppercase rounded-sm flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
-              >
+              <button onClick={guardarConfigMaestro} disabled={enviando} className="w-full bg-[#0070b1] text-white py-2.5 text-[10px] font-black uppercase rounded-sm flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50">
                 {enviando ? <Loader2 className="animate-spin" size={14} /> : <><Save size={14} /> Actualizar Maestro</>}
               </button>
             </div>
@@ -491,27 +525,48 @@ export default function EstadoGeneralPage() {
         </div>
       )}
 
-      {/* SAP HELP MODAL */}
+      {/* HELP MODAL */}
       {isHelpModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 leading-none">
-          <div className="bg-white w-full max-sm rounded-sm shadow-2xl overflow-hidden border border-[#d3d7d9] animate-in zoom-in-95 leading-none">
-            <div className="bg-[#354a5f] p-4 flex justify-between items-center text-white text-left leading-none">
-              <div className="flex items-center gap-2 leading-none text-left"><HelpCircle size={18} /><h3 className="font-bold text-xs uppercase tracking-widest leading-none">Atajos S/4HANA</h3></div>
-              <X size={20} className="cursor-pointer hover:opacity-70" onClick={() => setIsHelpModalOpen(false)} />
-            </div>
-            <div className="p-6 space-y-3 leading-none text-left">
-              <ShortcutRow keys="CTRL + 1" label="Módulo: Rendimiento" />
-              <ShortcutRow keys="CTRL + 2" label="Módulo: DB Repuestos" />
-              <ShortcutRow keys="CTRL + 3" label="Módulo: Monitor Estatus" />
-              <ShortcutRow keys="CTRL + 4" label="Módulo: Inventario" />
-              <ShortcutRow keys="ALT + S" label="Búsqueda Rápida [Foco]" />
-              <ShortcutRow keys="ALT + X" label="Limpiar Filtros y Búsqueda" />
-              <ShortcutRow keys="ALT + Q" label="Refrescar Datos Servidor" />
-            </div>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 text-left leading-none">
+          <div className="bg-white w-full max-sm rounded-sm shadow-2xl p-6 space-y-3 relative border border-[#d3d7d9]">
+            <h3 className="font-bold text-xs uppercase tracking-widest text-[#354a5f] border-b pb-2 mb-4 leading-none">Atajos Disponibles</h3>
+            <ShortcutRow keys="CTRL + 1" label="Módulo: Rendimiento" />
+            <ShortcutRow keys="CTRL + 2" label="Módulo: DB Repuestos" />
+            <ShortcutRow keys="CTRL + 3" label="Módulo: Monitor Estatus" />
+            <ShortcutRow keys="ALT + X" label="Limpiar Filtros" />
+            <ShortcutRow keys="ALT + S" label="Foco Buscador" />
+            <X size={20} className="absolute top-4 right-4 cursor-pointer text-slate-400" onClick={() => setIsHelpModalOpen(false)} />
           </div>
         </div>
       )}
     </main>
+  )
+}
+
+function MiniTireVisual({ pos, info }: any) {
+  const colors: any = { 'VERDE': 'bg-emerald-500', 'AMARILLO': 'bg-amber-400', 'NARANJA': 'bg-orange-500', 'ROJO': 'bg-rose-600' }
+  return (
+    <div className="flex flex-col items-center gap-1 leading-none">
+      <span className="text-[8px] font-black text-slate-400 uppercase leading-none">{pos}</span>
+      <div className={`w-10 h-16 ${info ? colors[info.alerta_color] || 'bg-slate-800' : 'bg-slate-100 border-2 border-dashed border-slate-200'} rounded-sm flex flex-col items-center justify-center text-white border border-black/10 shadow-lg group relative transition-transform hover:scale-105`}>
+        {info ? (
+          <>
+            <span className="text-[11px] font-black leading-none">{Math.round(info.otr_porcentaje)}%</span>
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 hidden group-hover:block bg-slate-900 text-white p-3 rounded-sm text-[10px] w-44 z-[250] leading-tight shadow-2xl border border-white/20 text-left">
+              <p className="text-blue-400 font-black mb-1 border-b border-white/10 pb-1">{info.serie}</p>
+              <p className="text-[8px] uppercase text-slate-400 mb-2 font-bold">{info.marca} {info.modelo}</p>
+              <div className="space-y-1 font-mono text-[9px]">
+                <div className="flex justify-between"><span>R1:</span><span className="text-emerald-400 font-black">{info.mm_izq}mm</span></div>
+                <div className="flex justify-between"><span>R2:</span><span className="text-emerald-400 font-black">{info.mm_cen}mm</span></div>
+                <div className="flex justify-between"><span>R3:</span><span className="text-emerald-400 font-black">{info.mm_der}mm</span></div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <span className="text-[7px] text-slate-300 font-black uppercase italic leading-none">Vacío</span>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -531,9 +586,9 @@ function SapKpiTile({ label, value, color, active, onClick }: any) {
 
 function ShortcutRow({ keys, label }: { keys: string, label: string }) {
   return (
-    <div className="flex justify-between items-center text-left leading-none">
-      <span className="text-[10px] font-bold text-[#6a6d70] uppercase leading-none">{label}</span>
-      <span className="bg-[#f2f4f5] text-[#354a5f] px-2 py-1 rounded-sm text-[10px] font-black font-mono border border-[#d3d7d9] leading-none">{keys}</span>
+    <div className="flex justify-between items-center text-left leading-none text-[10px] font-bold text-slate-600">
+      <span>{label}</span>
+      <span className="bg-[#f2f4f5] px-2 py-1 rounded-sm font-mono border border-[#d3d7d9]">{keys}</span>
     </div>
   )
 }
