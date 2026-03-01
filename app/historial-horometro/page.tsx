@@ -7,10 +7,13 @@ import jsPDF from 'jspdf'
 import {
   ArrowLeft, Search, Gauge, Truck, X, Save, Loader2, History,
   ChevronRight, ArrowUpCircle, Clock, Wrench, ShieldCheck, ShieldAlert,
-  LayoutGrid, // ✅ IMPORTACIÓN CORREGIDA
+  LayoutGrid,
   RefreshCw, Box, Activity, Target, AlertOctagon, CheckCircle2,
   MapPin, ClipboardList, Construction, LogOut, FileText, HelpCircle,
-  Settings2, CalendarDays, Zap
+  Settings2, CalendarDays, Zap,
+  Settings,
+  Layers,
+  Calendar
 } from 'lucide-react'
 
 // ✅ FUNCIÓN PARA OBTENER FECHA LOCAL REAL
@@ -23,6 +26,8 @@ const obtenerFechaHoyLocal = () => {
 };
 
 interface EquipoEstado {
+  kmHodoUltiMp: string
+  FechUltMp: any
   placaRodaje: string;
   codigoEquipo: string;
   descripcionEquipo: string;
@@ -43,6 +48,7 @@ interface EquipoEstado {
   desface: number | null;
   status: string | null;
   obs: string;
+  configuracion_ejes?: string | null;
   disponibilidad?: number;
   tpef?: number;
   tppr?: number;
@@ -62,6 +68,11 @@ export default function EstadoGeneralPage() {
   const [enviando, setEnviando] = useState(false)
   const [historialModal, setHistorialModal] = useState<any[]>([])
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false)
+
+  // --- ✅ NUEVOS ESTADOS PARA MAESTRO ---
+  const [showEjesModal, setShowEjesModal] = useState(false)
+  const [nuevaConfigEjes, setNuevaConfigEjes] = useState('')
+  const [nuevaFrecuencia, setNuevaFrecuencia] = useState<string>('') // Nuevo estado frecuencia
 
   // --- 2. FUNCIONES ---
   const fetchEstadoActual = useCallback(async () => {
@@ -92,6 +103,35 @@ export default function EstadoGeneralPage() {
     setHistorialModal(data || [])
   }, [])
 
+  // --- ✅ FUNCIÓN ACTUALIZADA PARA GUARDAR EJES Y FRECUENCIA ---
+  const guardarConfigMaestro = async () => {
+    if (!equipoSeleccionado) return;
+    setEnviando(true);
+    try {
+      const { error } = await supabase
+        .from('maestroEquipos')
+        .update({
+          configuracion_ejes: nuevaConfigEjes,
+          frecuencia: nuevaFrecuencia ? parseInt(nuevaFrecuencia) : equipoSeleccionado.frecuencia
+        })
+        .eq('placaRodaje', equipoSeleccionado.placaRodaje);
+
+      if (error) throw error;
+      alert("✅ Datos maestros actualizados");
+      setShowEjesModal(false);
+      fetchEstadoActual();
+      setEquipoSeleccionado({
+        ...equipoSeleccionado,
+        configuracion_ejes: nuevaConfigEjes,
+        frecuencia: nuevaFrecuencia ? parseInt(nuevaFrecuencia) : equipoSeleccionado.frecuencia
+      });
+    } catch (err) {
+      alert("Error al actualizar maestro");
+    } finally {
+      setEnviando(false);
+    }
+  }
+
   // --- 3. EFFECTS ---
   useEffect(() => { fetchEstadoActual() }, [fetchEstadoActual])
 
@@ -104,7 +144,15 @@ export default function EstadoGeneralPage() {
       if (e.ctrlKey && e.key === '0') { e.preventDefault(); router.push('/equipos'); }
       if (e.altKey && e.key.toLowerCase() === 's') { e.preventDefault(); inputBusquedaRef.current?.focus(); }
       if (e.altKey && e.key.toLowerCase() === 'h') { e.preventDefault(); setIsHelpModalOpen(p => !p); }
-      if (e.altKey && e.key.toLowerCase() === 'x') { e.preventDefault(); setBusqueda(''); setFiltroKPI('TODOS'); }
+
+      // ✅ MODIFICADO: AHORA ALT + X TAMBIÉN BORRA EL TEXTO DEL INPUT
+      if (e.altKey && e.key.toLowerCase() === 'x') {
+        e.preventDefault();
+        setBusqueda('');
+        setFiltroKPI('TODOS');
+        if (inputBusquedaRef.current) inputBusquedaRef.current.value = '';
+      }
+
       if (e.altKey && e.key.toLowerCase() === 'q') { e.preventDefault(); fetchEstadoActual(); }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -115,6 +163,8 @@ export default function EstadoGeneralPage() {
     if (equipoSeleccionado) {
       fetchHistorial(equipoSeleccionado.placaRodaje);
       setForm({ inicio: equipoSeleccionado.horometroMayor?.toString() || '0', final: '', fecha: obtenerFechaHoyLocal() })
+      setNuevaConfigEjes(equipoSeleccionado.configuracion_ejes || '')
+      setNuevaFrecuencia(equipoSeleccionado.frecuencia?.toString() || '') // Inicializar frecuencia
     }
   }, [equipoSeleccionado, fetchHistorial])
 
@@ -177,12 +227,18 @@ export default function EstadoGeneralPage() {
         <div className="flex items-center gap-4 text-left leading-none">
           <ArrowLeft size={18} onClick={() => router.back()} className="cursor-pointer hover:opacity-70" />
           <div className="h-6 w-px bg-white/20" />
-          <span className="font-bold text-xs tracking-wider uppercase italic leading-none">Monitor de Salud | SAP S/4HANA</span>
+          <span className="font-bold text-xs tracking-wider uppercase italic leading-none">Monitor de las unidades</span>
         </div>
         <div className="flex items-center gap-6 text-left leading-none">
           <div className="relative leading-none">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-white/50" size={14} />
-            <input ref={inputBusquedaRef} onChange={(e) => setBusqueda(e.target.value)} className="bg-white/10 border border-white/20 rounded-sm py-1 pl-8 pr-2 text-xs outline-none focus:bg-white focus:text-slate-900 transition-all w-64 font-bold" placeholder="Buscar Placa o Grupo..." />
+            <input
+              ref={inputBusquedaRef}
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              className="bg-white/10 border border-white/20 rounded-sm py-1 pl-8 pr-2 text-xs outline-none focus:bg-white focus:text-slate-900 transition-all w-64 font-bold"
+              placeholder="Buscar Placa o Grupo..."
+            />
           </div>
           <HelpCircle size={18} className="cursor-pointer opacity-80 hover:opacity-100" onClick={() => setIsHelpModalOpen(true)} />
         </div>
@@ -206,7 +262,12 @@ export default function EstadoGeneralPage() {
                 <LayoutGrid size={14} />
                 <span className="text-[11px] font-bold uppercase tracking-tight leading-none">Visión General de Flota</span>
               </div>
-              <button onClick={() => setFiltroKPI('TODOS')} className="text-[10px] text-[#0070b1] font-bold hover:underline uppercase leading-none">Reiniciar Filtros</button>
+              <button
+                onClick={() => { setFiltroKPI('TODOS'); setBusqueda(''); }}
+                className="text-[10px] text-[#0070b1] font-bold hover:underline uppercase leading-none"
+              >
+                Reiniciar Filtros
+              </button>
             </div>
 
             <div className="p-4 max-h-[calc(100vh-220px)] overflow-y-auto space-y-6 text-left bg-white">
@@ -245,15 +306,23 @@ export default function EstadoGeneralPage() {
             </div>
 
             <div className="p-5 space-y-6 overflow-y-auto">
-              {/* STATUS DE MANTENIMIENTO SAP */}
-              <div className="space-y-3 bg-[#eff4f9] p-4 border border-[#b0ccf0] rounded-sm">
-                <h4 className="text-[10px] font-black text-[#0070b1] uppercase flex items-center gap-2 border-b border-[#b0ccf0] pb-2 leading-none mb-3">
-                  <Settings2 size={12} /> Planificación de Mantenimiento
-                </h4>
+              <div className="space-y-3 bg-[#eff4f9] p-4 border border-[#b0ccf0] rounded-sm text-left">
+                <div className="flex justify-between items-center border-b border-[#b0ccf0] pb-2 mb-3">
+                  <h4 className="text-[10px] font-black text-[#0070b1] uppercase flex items-center gap-2 leading-none">
+                    <Settings2 size={12} /> Planificación de Mantenimiento
+                  </h4>
+                  <button
+                    onClick={() => setShowEjesModal(true)}
+                    className="p-1 hover:bg-[#0070b1] hover:text-white rounded-sm transition-all text-[#0070b1]"
+                    title="Ajustes de Maestro"
+                  >
+                    <Settings size={14} />
+                  </button>
+                </div>
 
                 <div className="grid grid-cols-2 gap-4 text-left leading-none">
                   <div>
-                    <p className="text-[9px] font-bold text-[#6a6d70] uppercase mb-1 leading-none">Último MP Ejecutado</p>
+                    <p className="text-[9px] font-bold text-[#6a6d70] uppercase mb-1 leading-none">Último MP</p>
                     <div className="flex items-center gap-2 text-[#32363a]">
                       <Zap size={12} className="text-emerald-600" />
                       <span className="text-xs font-black uppercase">{equipoSeleccionado.tipoMpUlt || 'N/A'}</span>
@@ -268,7 +337,18 @@ export default function EstadoGeneralPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 mt-4 text-left leading-none">
+                <div className="mt-2 py-2 border-y border-[#b0ccf0]/50">
+                  <p className="text-[9px] font-bold text-[#6a6d70] uppercase mb-1 leading-none">Estado Último MP</p>
+                  <div className="flex items-center gap-2 text-[#32363a]">
+                    <Calendar size={12} className="text-[#0070b1]" />
+                    <span className="text-[11px] font-black uppercase font-mono">
+                      {equipoSeleccionado.FechUltMp ? `${new Date(equipoSeleccionado.FechUltMp).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' })}` : '---'}
+                      {equipoSeleccionado.kmHodoUltiMp ? ` | ${equipoSeleccionado.kmHodoUltiMp} H` : ''}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 mt-2 text-left leading-none">
                   <div className="p-3 bg-white border border-[#d3d7d9] rounded-sm">
                     <p className="text-[9px] font-bold text-[#6a6d70] uppercase mb-1 flex items-center gap-1 leading-none"><Clock size={10} /> Próx. {equipoSeleccionado.tipoProxMp || 'MP'}</p>
                     <p className="text-sm font-black text-slate-700 font-mono leading-none">{equipoSeleccionado.ProxHoroKmMp || 'N/A'}</p>
@@ -280,9 +360,23 @@ export default function EstadoGeneralPage() {
                 </div>
               </div>
 
-              {/* ENTRADA DE TRANSACCIÓN */}
+              <div className="bg-white p-4 border border-[#d3d7d9] rounded-sm shadow-sm space-y-3 text-left">
+                <h4 className="text-[10px] font-black text-slate-500 uppercase flex items-center gap-2 border-b border-slate-100 pb-2 leading-none">
+                  <Layers size={12} className="text-[#0070b1]" /> Configuración de Neumáticos
+                </h4>
+                <div className="flex justify-between items-center leading-none">
+                  <div>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase mb-1 leading-none">Esquema de Ejes</p>
+                    <p className="text-xs font-black text-[#32363a] uppercase">
+                      {equipoSeleccionado.configuracion_ejes || 'NO CONFIGURADO'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* ENTRADA DE TRANSACCIÓN HORÓMETRO */}
               <div className="space-y-4 bg-[#f8f9fa] p-4 border border-[#d3d7d9] rounded-sm text-center leading-none">
-                <h4 className="text-[10px] font-black text-[#6a6d70] uppercase border-b border-[#d3d7d9] pb-1 flex items-center gap-2 leading-none">
+                <h4 className="text-[10px] font-black text-[#6a6d70] uppercase border-b border-[#d3d7d9] pb-1 flex items-center gap-2 leading-none text-left">
                   <RefreshCw size={12} /> Entrada de Horometro
                 </h4>
                 <div className="space-y-3">
@@ -309,19 +403,17 @@ export default function EstadoGeneralPage() {
               <div className="space-y-2 text-left leading-none">
                 <h4 className="text-[10px] font-black text-[#6a6d70] uppercase flex items-center gap-2 px-1 leading-none"><History size={12} /> Registro de Cambios</h4>
                 <div className="border border-[#d3d7d9] rounded-sm overflow-hidden shadow-sm leading-none">
-                  <table className="w-full text-[10px] leading-none">
+                  <table className="w-full text-[10px] leading-none text-left">
                     <thead className="bg-[#f2f4f5] text-[#6a6d70] border-b border-[#d3d7d9]">
                       <tr className="leading-none text-left">
                         <th className="p-2 font-bold uppercase text-left leading-none">Lectura</th>
-                        <th className="p-2 font-bold uppercase text-left leading-none">Variación</th>
                         <th className="p-2 font-bold uppercase text-left leading-none">Fecha</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 bg-white text-left leading-none">
                       {historialModal.map(h => (
-                        <tr key={h.id} className="hover:bg-[#f7f9fa] transition-all font-mono leading-none text-left">
+                        <tr key={h.id} className="hover:bg-[#f7f9fa] transition-all font-mono font-bold leading-none text-left">
                           <td className="p-2 text-[#0070b1] font-bold text-left leading-none">{h.horaFinal} h</td>
-                          <td className="p-2 text-emerald-600 text-left leading-none">+{h.horasOperacion} h</td>
                           <td className="p-2 text-slate-400 text-left leading-none">{new Date(h.created_at).toLocaleDateString()}</td>
                         </tr>
                       ))}
@@ -338,6 +430,67 @@ export default function EstadoGeneralPage() {
         )}
       </div>
 
+      {/* ✅ MODAL DE CONFIGURACIÓN DE MAESTRO (ACTUALIZADO CON FRECUENCIA) */}
+      {showEjesModal && equipoSeleccionado && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 leading-none text-left">
+          <div className="bg-white w-full max-w-xs rounded-sm shadow-2xl overflow-hidden border border-[#d3d7d9] animate-in zoom-in-95 leading-none">
+            <div className="bg-[#354a5f] p-3 flex justify-between items-center text-white text-left leading-none">
+              <div className="flex items-center gap-2 leading-none text-left">
+                <Settings size={14} />
+                <h3 className="font-bold text-[10px] uppercase tracking-widest leading-none">Ajustes: {equipoSeleccionado.placaRodaje}</h3>
+              </div>
+              <X size={16} className="cursor-pointer hover:opacity-70" onClick={() => setShowEjesModal(false)} />
+            </div>
+            <div className="p-5 space-y-4 text-left leading-none bg-white">
+              {/* SELECCIÓN DE EJES */}
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-500 uppercase leading-none">Esquema Neumáticos</label>
+                <select
+                  value={nuevaConfigEjes}
+                  onChange={(e) => setNuevaConfigEjes(e.target.value)}
+                  className="w-full border border-[#b0b3b5] p-2 text-xs rounded-sm outline-none focus:border-[#0070b1] font-bold bg-[#f8f9fa]"
+                >
+                  <option value="">Seleccionar esquema...</option>
+                  <option value="2-4-4">Tracto 6x4 (2-4-4)</option>
+                  <option value="2-2-4-4">Volvo 8x4 (2-2-4-4)</option>
+                  <option value="2-2-2">Motoniveladora (2-2-2)</option>
+                  <option value="2-4">Camión 4x2 (2-4)</option>
+                  <option value="2-2">Camioneta/Van (2-2)</option>
+                  <option value="4-4-4">Semirremolque S3 (4-4-4)</option>
+                  <option value="2-4-4-4">Tracto + Carreta (2-4-4-4)</option>
+                </select>
+              </div>
+
+              {/* ✅ FORMULARIO DE FRECUENCIA MP */}
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-[#0070b1] uppercase leading-none">Frecuencia Preventivo (Hrs)</label>
+                <input
+                  type="number"
+                  value={nuevaFrecuencia}
+                  onChange={(e) => setNuevaFrecuencia(e.target.value)}
+                  placeholder="Ej: 250, 400..."
+                  className="w-full border-2 border-[#0070b1]/20 p-2 text-xs rounded-sm outline-none focus:border-[#0070b1] font-bold"
+                />
+              </div>
+
+              <div className="p-3 bg-blue-50 border border-blue-100 rounded-sm">
+                <p className="text-[8px] text-blue-700 font-bold uppercase leading-tight italic text-center">
+                  Esta configuración actualiza los parámetros base del equipo en el Maestro.
+                </p>
+              </div>
+
+              <button
+                onClick={guardarConfigMaestro}
+                disabled={enviando}
+                className="w-full bg-[#0070b1] hover:bg-[#005a8e] text-white py-2.5 text-[10px] font-black uppercase rounded-sm flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
+              >
+                {enviando ? <Loader2 className="animate-spin" size={14} /> : <><Save size={14} /> Actualizar Maestro</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* SAP HELP MODAL */}
       {isHelpModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 leading-none">
@@ -352,6 +505,7 @@ export default function EstadoGeneralPage() {
               <ShortcutRow keys="CTRL + 3" label="Módulo: Monitor Estatus" />
               <ShortcutRow keys="CTRL + 4" label="Módulo: Inventario" />
               <ShortcutRow keys="ALT + S" label="Búsqueda Rápida [Foco]" />
+              <ShortcutRow keys="ALT + X" label="Limpiar Filtros y Búsqueda" />
               <ShortcutRow keys="ALT + Q" label="Refrescar Datos Servidor" />
             </div>
           </div>

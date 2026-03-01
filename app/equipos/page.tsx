@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react' // Añadido useRef
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import {
@@ -7,12 +7,16 @@ import {
   Clock, Wrench, ShieldCheck, Database, PackageSearch,
   BarChart3, ClipboardList, Construction, RefreshCw,
   LayoutDashboard, AlertCircle, FileWarning, TimerOff, ClipboardCheck,
-  CalendarCheck
+  CalendarCheck, LayoutGrid, Layers, RotateCw, Gauge // Nuevos iconos para neumáticos
 } from 'lucide-react'
 
 export default function MaestroEquiposPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
+
+  // --- ✅ ESTADO PARA MENÚ DE NEUMÁTICOS ---
+  const [showNeumaticosMenu, setShowNeumaticosMenu] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   // --- INDICADORES ORIGINALES ---
   const [pendientesConductor, setPendientesConductor] = useState(0)
@@ -23,6 +27,17 @@ export default function MaestroEquiposPage() {
   // --- ✅ NUEVOS INDICADORES DE CUMPLIMIENTO EJECUTADO ---
   const [prevSemanales, setPrevSemanales] = useState(0)
   const [prevMensuales, setPrevMensuales] = useState(0)
+
+  // Cerrar menú al hacer clic fuera
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowNeumaticosMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // ✅ ATAJO DE TECLADO: CTRL + 1
   useEffect(() => {
@@ -43,43 +58,32 @@ export default function MaestroEquiposPage() {
   const fetchIndicadores = async () => {
     try {
       setLoading(true)
-
-      // 1. ✅ REPORTES PENDIENTES (Tabla reportesConductor)
       const { count: countPendientes } = await supabase
         .from('reportesConductor')
         .select('*', { count: 'exact', head: true })
         .eq('statusReporte', 'PENDIENTE')
 
-      // 2. ✅ DATOS DE MANTENIMIENTO (Tabla maestroEquipos)
       const { data: flota, error: errV } = await supabase
         .from('maestroEquipos')
         .select('desface')
 
-      // --- ✅ NUEVA LÓGICA: RASTREO DE MTTO. PREV EJECUTADOS (Tabla historial_eventos) ---
       const hoy = new Date();
-
-      // Calcular inicio de semana (hace 7 días)
       const haceUnaSemana = new Date();
       haceUnaSemana.setDate(hoy.getDate() - 7);
-
-      // Calcular inicio de mes
       const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
 
-      // Consulta Semanal
       const { count: countSemanal } = await supabase
         .from('historial_eventos')
         .select('*', { count: 'exact', head: true })
         .eq('tipoTrabajo', 'MTTO. PREV')
         .gte('fecha_evento', haceUnaSemana.toISOString().split('T')[0]);
 
-      // Consulta Mensual
       const { count: countMensual } = await supabase
         .from('historial_eventos')
         .select('*', { count: 'exact', head: true })
         .eq('tipoTrabajo', 'MTTO. PREV')
         .gte('fecha_evento', inicioMes.toISOString().split('T')[0]);
 
-      // Asignación de estados
       if (countPendientes !== null) setPendientesConductor(countPendientes)
       if (countSemanal !== null) setPrevSemanales(countSemanal)
       if (countMensual !== null) setPrevMensuales(countMensual)
@@ -94,7 +98,6 @@ export default function MaestroEquiposPage() {
           setPorcentajeVencidos(porc);
         }
       }
-
     } catch (err) {
       console.error("Error SAP Analytical Engine:", err)
     } finally {
@@ -117,7 +120,6 @@ export default function MaestroEquiposPage() {
   return (
     <main className="min-h-screen bg-[#f7f9fa] text-[#32363a] font-sans text-left leading-none">
 
-      {/* --- SAP SHELL BAR --- */}
       <nav className="bg-[#354a5f] text-white h-12 flex items-center px-4 justify-between shadow-md sticky top-0 z-50">
         <div className="flex items-center gap-4">
           <div className="bg-[#0070b1] p-1.5 rounded-sm">
@@ -134,14 +136,40 @@ export default function MaestroEquiposPage() {
         </div>
       </nav>
 
-      {/* --- HEADER --- */}
       <div className="bg-white border-b border-[#d3d7d9] p-6 mb-4">
         <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row justify-between items-end gap-6">
           <div className="text-left leading-none">
             <h1 className="text-2xl font-light text-[#32363a]">Consola de Indicadores</h1>
             <p className="text-[11px] font-bold text-[#6a6d70] uppercase mt-2 tracking-wider">Gestión de Activos y Cumplimiento de Mantenimiento</p>
           </div>
-          <div className="flex flex-wrap gap-2">
+
+          <div className="flex flex-wrap gap-2 relative" ref={menuRef}>
+            {/* ✅ BOTÓN DE NEUMÁTICOS CON MENÚ DESPLEGABLE */}
+            <div className="relative">
+              <button
+                onClick={() => setShowNeumaticosMenu(!showNeumaticosMenu)}
+                className={`flex items-center gap-2 px-4 py-1.5 border border-[#b0b3b5] rounded-sm text-[10px] font-bold uppercase transition-all shadow-sm leading-none ${showNeumaticosMenu ? 'bg-[#0070b1] text-white' : 'bg-white text-[#0070b1] hover:bg-[#eff4f9]'}`}
+              >
+                <Layers size={14} /> Neumáticos <ChevronDown size={12} className={`transition-transform ${showNeumaticosMenu ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showNeumaticosMenu && (
+                <div className="absolute top-full right-0 mt-1 w-56 bg-white border border-[#d3d7d9] shadow-xl rounded-sm z-[100] animate-in fade-in slide-in-from-top-2 duration-200 overflow-hidden">
+                  <div className="bg-[#f2f4f5] px-3 py-2 border-b border-[#d3d7d9]">
+                    <span className="text-[9px] font-black text-[#6a6d70] uppercase tracking-widest">Gestión de Llantas</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <MenuLink onClick={() => router.push('/neumaticos/heatmap')} icon={<LayoutGrid size={14} />} label="Heatmap de Flota" />
+                    <MenuLink onClick={() => router.push('/neumaticos/maestro')} icon={<Database size={14} />} label="Maestro de Llantas" />
+                    <MenuLink onClick={() => router.push('/neumaticos/asignacion')} icon={<Truck size={14} />} label="Asignación / Montaje" />
+                    <MenuLink onClick={() => router.push('/neumaticos/inspeccion')} icon={<Gauge size={14} />} label="Inspección R1-R2-R3" />
+                    <MenuLink onClick={() => router.push('/neumaticos/rotaciones')} icon={<RotateCw size={14} />} label="Rotaciones" />
+                    <MenuLink onClick={() => router.push('/neumaticos/proyecciones')} icon={<BarChart3 size={14} />} label="Proyecciones y CPK" />
+                  </div>
+                </div>
+              )}
+            </div>
+
             <SapButton onClick={() => router.push('/bdrepuestos')} icon={<Database size={14} />}>Maestro Repuestos</SapButton>
             <SapButton onClick={() => router.push('/repuestos')} icon={<PackageSearch size={14} />}>seg. logis</SapButton>
             <SapButton onClick={() => router.push('/historial-horometro')} icon={<ClipboardList size={14} />}>Mantenimiento</SapButton>
@@ -149,11 +177,8 @@ export default function MaestroEquiposPage() {
         </div>
       </div>
 
-      {/* --- DASHBOARD SECTION --- */}
       <div className="max-w-[1600px] mx-auto p-4">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 text-left leading-none">
-
-          {/* INDICADOR 1: REPORTES PENDIENTES */}
           <div onClick={() => router.push('/rendimiento')} className="bg-white border border-[#d3d7d9] shadow-sm rounded-sm p-5 border-l-4 border-l-[#bb0000] hover:bg-[#fff4f4] transition-all cursor-pointer group leading-none">
             <div className="flex justify-between items-start mb-6 leading-none">
               <div className="space-y-1">
@@ -168,7 +193,6 @@ export default function MaestroEquiposPage() {
             </div>
           </div>
 
-          {/* INDICADOR 2: PREVENTIVOS VENCIDOS */}
           <div onClick={() => router.push('/historial-horometro')} className="bg-white border border-[#d3d7d9] shadow-sm rounded-sm p-5 border-l-4 border-l-[#e6600d] hover:bg-[#fffcf5] transition-all cursor-pointer group leading-none">
             <div className="flex justify-between items-start mb-6 leading-none text-left">
               <div className="space-y-1">
@@ -183,7 +207,6 @@ export default function MaestroEquiposPage() {
             </div>
           </div>
 
-          {/* INDICADOR 3: TOTAL CONTROLADOS */}
           <div className="bg-white border border-[#d3d7d9] shadow-sm rounded-sm p-5 border-l-4 border-l-[#0070b1] leading-none">
             <div className="flex justify-between items-start mb-6 leading-none text-left">
               <div className="space-y-1">
@@ -198,7 +221,6 @@ export default function MaestroEquiposPage() {
             </div>
           </div>
 
-          {/* ✅ NUEVO INDICADOR 4: PREVENTIVOS SEMANALES */}
           <div className="bg-white border border-[#d3d7d9] shadow-sm rounded-sm p-5 border-l-4 border-l-emerald-500 leading-none">
             <div className="flex justify-between items-start mb-6 leading-none text-left">
               <div className="space-y-1">
@@ -213,7 +235,6 @@ export default function MaestroEquiposPage() {
             </div>
           </div>
 
-          {/* ✅ NUEVO INDICADOR 5: PREVENTIVOS MENSUALES */}
           <div className="bg-white border border-[#d3d7d9] shadow-sm rounded-sm p-5 border-l-4 border-l-emerald-700 leading-none">
             <div className="flex justify-between items-start mb-6 leading-none text-left">
               <div className="space-y-1">
@@ -228,7 +249,6 @@ export default function MaestroEquiposPage() {
             </div>
           </div>
 
-          {/* INDICADOR 6: CUMPLIMIENTO (%) */}
           <div className="bg-white border border-[#d3d7d9] shadow-sm rounded-sm p-5 border-l-4 border-l-slate-800 leading-none">
             <div className="flex justify-between items-start mb-6 text-left leading-none">
               <div className="space-y-1">
@@ -244,10 +264,22 @@ export default function MaestroEquiposPage() {
               <span className="text-[10px] font-bold text-slate-800 uppercase">%</span>
             </div>
           </div>
-
         </div>
       </div>
     </main>
+  )
+}
+
+// ✅ COMPONENTE PARA LINKS DEL MENÚ DESPLEGABLE
+function MenuLink({ icon, label, onClick }: any) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-3 px-4 py-3 text-[#32363a] hover:bg-[#eff4f9] hover:text-[#0070b1] transition-colors border-b border-[#f2f4f5] last:border-0 w-full text-left"
+    >
+      <span className="text-slate-400">{icon}</span>
+      <span className="text-[10px] font-bold uppercase tracking-tight">{label}</span>
+    </button>
   )
 }
 
