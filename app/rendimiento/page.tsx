@@ -151,6 +151,8 @@ function RendimientoContent() {
       if (e.ctrlKey && e.key === '2') { e.preventDefault(); router.push('/bdrepuestos'); }
       if (e.ctrlKey && e.key === '3') { e.preventDefault(); router.push('/estatus'); }
       if (e.ctrlKey && e.key === '4') { e.preventDefault(); router.push('/repuestos'); }
+      if (e.ctrlKey && e.key === '0') { e.preventDefault(); router.push('/equipos'); }
+      if (e.ctrlKey && e.key === 'm') { e.preventDefault(); router.push('/mtto/consolidado'); }
 
       if (e.altKey && e.key === '1') { e.preventDefault(); setIsConductorModalOpen(p => !p); }
       if (e.altKey && e.key === '2') { if (isConductorModalOpen) { e.preventDefault(); document.getElementById('btnGuardarConductor')?.click(); } }

@@ -176,6 +176,7 @@ export default function EstadoGeneralPage() {
       if (e.ctrlKey && e.key === '3') { e.preventDefault(); router.push('/estatus'); }
       if (e.ctrlKey && e.key === '4') { e.preventDefault(); router.push('/repuestos'); }
       if (e.ctrlKey && e.key === '0') { e.preventDefault(); router.push('/equipos'); }
+      if (e.ctrlKey && e.key === 'm') { e.preventDefault(); router.push('/mtto/consolidado'); }
       if (e.altKey && e.key.toLowerCase() === 's') { e.preventDefault(); inputBusquedaRef.current?.focus(); }
       if (e.altKey && e.key.toLowerCase() === 'h') { e.preventDefault(); setIsHelpModalOpen(p => !p); }
       if (e.altKey && e.key.toLowerCase() === 'x') {
