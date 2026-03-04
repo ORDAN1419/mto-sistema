@@ -144,6 +144,7 @@ export default function CalendarioMttoPage() {
             if (e.altKey && e.key.toLowerCase() === 'p') { e.preventDefault(); exportarPDF(); }
             if (e.ctrlKey && e.key === '0') { e.preventDefault(); router.push('/equipos'); }
             if (e.ctrlKey && e.key === '1') { e.preventDefault(); router.push('/historial-horometro'); }
+            if (e.ctrlKey && e.key === 'h') { e.preventDefault(); router.push('/mtto/horometro'); }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);

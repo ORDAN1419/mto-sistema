@@ -51,6 +51,7 @@ export default function MaestroEquiposPage() {
         router.push('/mtto/consolidado');
       }
       if (e.ctrlKey && e.key === '2') { e.preventDefault(); router.push('/rendimiento'); }
+      if (e.ctrlKey && e.key === '5') { e.preventDefault(); router.push('/mtto/horometro'); }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
