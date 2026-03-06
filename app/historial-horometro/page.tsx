@@ -96,8 +96,14 @@ export default function EstadoGeneralPage() {
   }, [])
 
   // ✅ NUEVA FUNCIÓN PARA CAMBIAR ESTADO RÁPIDAMENTE
+  // ✅ FUNCIÓN ACTUALIZADA PARA ROTAR ENTRE 3 ESTADOS
   const toggleEstado = async (equipo: EquipoEstado) => {
-    const nuevoEstado = equipo.status?.toLowerCase() === 'operativo' ? 'INOPERATIVO' : 'OPERATIVO';
+    let nuevoEstado = 'OPERATIVO';
+    const estadoActual = equipo.status?.toUpperCase();
+
+    if (estadoActual === 'OPERATIVO') nuevoEstado = 'INOPERATIVO';
+    else if (estadoActual === 'INOPERATIVO') nuevoEstado = 'DESMOVILIZADO';
+    else nuevoEstado = 'OPERATIVO';
 
     // Actualización optimista en interfaz
     setEquipos(prev => prev.map(e => e.placaRodaje === equipo.placaRodaje ? { ...e, status: nuevoEstado } : e));
@@ -245,9 +251,23 @@ export default function EstadoGeneralPage() {
     if (!form.final || hFinal <= Number(form.inicio)) { alert("La nueva lectura debe ser mayor a la anterior"); return; }
     setEnviando(true);
     try {
-      const ts = new Date().toISOString();
-      await supabase.from('horometro').insert([{ placaRodaje: equipoSeleccionado.placaRodaje, horaInicio: Number(form.inicio), horaFinal: hFinal, horasOperacion: hFinal - Number(form.inicio), horometroMayor: hFinal, created_at: ts }]);
-      await supabase.from('maestroEquipos').update({ horometroMayor: hFinal, ultima_fecha: ts }).eq('placaRodaje', equipoSeleccionado.placaRodaje);
+      // ✅ Sincroniza usando la fecha que elijas en el calendario
+      const fechaCargaISO = new Date(form.fecha).toISOString();
+
+      await supabase.from('horometro').insert([{
+        placaRodaje: equipoSeleccionado.placaRodaje,
+        horaInicio: Number(form.inicio),
+        horaFinal: hFinal,
+        horasOperacion: hFinal - Number(form.inicio),
+        horometroMayor: hFinal,
+        created_at: fechaCargaISO
+      }]);
+
+      await supabase.from('maestroEquipos').update({
+        horometroMayor: hFinal,
+        ultima_fecha: fechaCargaISO
+      }).eq('placaRodaje', equipoSeleccionado.placaRodaje);
+
       await fetchEstadoActual();
       setEquipoSeleccionado(null);
       alert("✅ Horómetro sincronizado");
@@ -299,7 +319,7 @@ export default function EstadoGeneralPage() {
               <button onClick={() => { setFiltroKPI('TODOS'); setBusqueda(''); }} className="text-[10px] text-[#0070b1] font-bold hover:underline uppercase leading-none">Reiniciar Filtros</button>
             </div>
 
-            <div className="p-4 max-h-[calc(100vh-220px)] overflow-y-auto space-y-6 text-left bg-white">
+            <div className="p-4 space-y-6 text-left bg-white">
               {Object.entries(equiposAgrupados).map(([grupo, lista]) => (
                 <div key={grupo} className="space-y-2">
                   <div className="flex items-center gap-2 border-b border-slate-100 pb-1 leading-none">
@@ -309,7 +329,20 @@ export default function EstadoGeneralPage() {
                   </div>
                   <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-10 gap-1">
                     {lista.map(eq => {
-                      const color = eq.desface! <= 0 ? 'bg-rose-600' : eq.desface! <= 24 ? 'bg-amber-500' : 'bg-emerald-600';
+                      // ✅ Lógica de colores por estado y desfase
+                      let color = 'bg-emerald-600'; // Por defecto saludable
+                      const status = eq.status?.toUpperCase();
+
+                      if (status === 'DESMOVILIZADO') {
+                        color = 'bg-slate-500'; // Gris para desmovilizados
+                      } else if (status === 'INOPERATIVO') {
+                        color = 'bg-purple-600'; // Morado para inoperativos
+                      } else {
+                        // Si está Operativo, aplicamos colores de desfase
+                        if (eq.desface! <= 0) color = 'bg-rose-600';
+                        else if (eq.desface! <= 24) color = 'bg-amber-500';
+                      }
+
                       return (
                         <button key={eq.placaRodaje} onClick={() => setEquipoSeleccionado(eq)} className={`flex flex-col border border-[#d3d7d9] rounded-sm overflow-hidden hover:border-[#0070b1] transition-all group ${equipoSeleccionado?.placaRodaje === eq.placaRodaje ? 'ring-2 ring-[#0070b1]' : ''}`}>
                           <div className="bg-[#f7f9fa] py-1 text-[8px] font-bold text-[#6a6d70] truncate px-1 uppercase leading-none">{eq.codigoEquipo}</div>
@@ -332,13 +365,17 @@ export default function EstadoGeneralPage() {
                 <div className="flex items-center gap-3">
                   <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider bg-slate-100 px-1.5 py-0.5 rounded-sm">{equipoSeleccionado.codigoEquipo}</span>
                   <div className="w-px h-3 bg-slate-300" />
-                  {/* ✅ ETIQUETA DE STATUS CLICKABLE EN PANEL DETALLE */}
+                  {/* ✅ ETIQUETA DE STATUS CON NUEVOS COLORES */}
                   <div
                     onClick={() => toggleEstado(equipoSeleccionado)}
                     className="flex items-center gap-1.5 cursor-pointer hover:opacity-70 transition-all active:scale-95"
                   >
-                    <div className={`w-2 h-2 rounded-full ${equipoSeleccionado.status?.toLowerCase() === 'operativo' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                    <span className={`text-[10px] font-bold uppercase tracking-tight ${equipoSeleccionado.status?.toLowerCase() === 'operativo' ? 'text-emerald-700' : 'text-rose-700'}`}>
+                    <div className={`w-2 h-2 rounded-full ${equipoSeleccionado.status?.toUpperCase() === 'OPERATIVO' ? 'bg-emerald-500' :
+                      equipoSeleccionado.status?.toUpperCase() === 'INOPERATIVO' ? 'bg-purple-500' : 'bg-slate-400'
+                      }`} />
+                    <span className={`text-[10px] font-bold uppercase tracking-tight ${equipoSeleccionado.status?.toUpperCase() === 'OPERATIVO' ? 'text-emerald-700' :
+                      equipoSeleccionado.status?.toUpperCase() === 'INOPERATIVO' ? 'text-purple-700' : 'text-slate-600'
+                      }`}>
                       {equipoSeleccionado.status || 'SIN ESTADO'}
                     </span>
                   </div>
@@ -394,25 +431,52 @@ export default function EstadoGeneralPage() {
 
               <div className="space-y-4 bg-white p-4 border-2 border-[#0070b1] rounded-sm text-center shadow-lg leading-none">
                 <h4 className="text-[10px] font-black text-[#0070b1] uppercase border-b border-slate-100 pb-1 flex items-center gap-2 text-left leading-none font-sans"><RefreshCw size={12} /> Entrada de Horómetro</h4>
-                <div className="space-y-3 text-left">
-                  <div className="grid grid-cols-2 gap-3 leading-none">
-                    <div><label className="text-[9px] font-bold text-slate-400 uppercase leading-none">Anterior</label><div className="bg-slate-100 p-2 text-sm font-mono font-bold text-slate-500 border rounded-sm text-center leading-none">{equipoSeleccionado.horometroMayor}</div></div>
-                    <div>
-                      <label className="text-[9px] font-bold text-[#0070b1] uppercase font-black leading-none italic underline">Nueva (Enter)</label>
+                {/* PANEL ENTRADA DE HORÓMETRO ACTUALIZADO */}
+                <div className="space-y-4 bg-white p-4 border-2 border-[#0070b1] rounded-sm text-center shadow-lg leading-none">
+                  <h4 className="text-[10px] font-black text-[#0070b1] uppercase border-b border-slate-100 pb-1 flex items-center gap-2 text-left leading-none font-sans"><RefreshCw size={12} /> Entrada de Horómetro</h4>
+                  <div className="space-y-4 text-left leading-none">
+                    {/* Selector de Fecha de Reporte */}
+                    <div className="flex flex-col gap-1.5 leading-none">
+                      <label className="text-[9px] font-black text-slate-500 uppercase leading-none">Fecha de Reporte</label>
                       <input
-                        ref={inputNuevaLecturaRef}
-                        type="number" step="0.1"
-                        value={form.final}
-                        onChange={(e) => setForm({ ...form, final: e.target.value })}
-                        onKeyDown={(e) => { if (e.key === 'Enter') guardarLectura(); }}
-                        className="w-full border-2 border-[#0070b1] p-2 text-sm font-mono font-black text-[#0070b1] outline-none rounded-sm bg-[#f0f9ff] text-center"
-                        placeholder="0.0"
+                        type="date"
+                        value={form.fecha}
+                        onChange={(e) => setForm({ ...form, fecha: e.target.value })}
+                        className="w-full border border-[#d3d7d9] p-2 text-xs rounded-sm font-bold bg-[#f8f9fa] outline-none focus:border-[#0070b1] leading-none"
                       />
                     </div>
+
+                    <div className="grid grid-cols-2 gap-3 leading-none mt-2">
+                      <div className="leading-none">
+                        <label className="text-[9px] font-bold text-slate-400 uppercase leading-none">Anterior</label>
+                        <div className="bg-slate-100 p-2 text-sm font-mono font-bold text-slate-500 border rounded-sm text-center leading-none mt-1">
+                          {equipoSeleccionado.horometroMayor}
+                        </div>
+                        {/* ✅ Visualización de la fecha de última actualización */}
+                        <p className="text-[8px] font-bold text-slate-400 mt-1 uppercase text-center">
+                          Act: {equipoSeleccionado.ultima_fecha
+                            ? new Date(equipoSeleccionado.ultima_fecha.replace(/-/g, '\/').replace(/T.+/, '')).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: '2-digit' })
+                            : 'N/A'}
+                        </p>
+                      </div>
+                      <div className="leading-none text-left">
+                        <label className="text-[9px] font-bold text-[#0070b1] uppercase font-black leading-none italic underline">Nueva Lectura</label>
+                        <input
+                          ref={inputNuevaLecturaRef}
+                          type="number"
+                          step="0.1"
+                          value={form.final}
+                          onChange={(e) => setForm({ ...form, final: e.target.value })}
+                          onKeyDown={(e) => { if (e.key === 'Enter') guardarLectura(); }}
+                          className="w-full border-2 border-[#0070b1] p-2 text-sm font-mono font-black text-[#0070b1] outline-none rounded-sm bg-[#f0f9ff] text-center mt-1 leading-none"
+                          placeholder="0.0"
+                        />
+                      </div>
+                    </div>
+                    <button onClick={guardarLectura} disabled={enviando} className="w-full bg-[#0070b1] hover:bg-[#005a8e] text-white py-3 text-xs font-black uppercase rounded-sm transition-all flex items-center justify-center gap-2 active:scale-95 leading-none mt-2 shadow-md">
+                      {enviando ? <Loader2 className="animate-spin" size={16} /> : <><Save size={16} /> Contabilizar (Enter)</>}
+                    </button>
                   </div>
-                  <button onClick={guardarLectura} disabled={enviando} className="w-full bg-[#0070b1] hover:bg-[#005a8e] text-white py-3 text-xs font-black uppercase rounded-sm transition-all flex items-center justify-center gap-2 active:scale-95 leading-none">
-                    {enviando ? <Loader2 className="animate-spin" size={16} /> : <><Save size={16} /> Contabilizar (Enter)</>}
-                  </button>
                 </div>
               </div>
 
