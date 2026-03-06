@@ -474,7 +474,7 @@ export default function EstadoGeneralPage() {
                       </div>
                     </div>
                     <button onClick={guardarLectura} disabled={enviando} className="w-full bg-[#0070b1] hover:bg-[#005a8e] text-white py-3 text-xs font-black uppercase rounded-sm transition-all flex items-center justify-center gap-2 active:scale-95 leading-none mt-2 shadow-md">
-                      {enviando ? <Loader2 className="animate-spin" size={16} /> : <><Save size={16} /> Contabilizar (Enter)</>}
+                      {enviando ? <Loader2 className="animate-spin" size={16} /> : <><Save size={16} /> Actualizar (Enter)</>}
                     </button>
                   </div>
                 </div>
