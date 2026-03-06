@@ -92,7 +92,7 @@ export default function ControlActualizacionPage() {
                 <div className="flex items-center gap-3">
                     <ShieldAlert size={14} className="text-orange-400" />
                     <span className="text-[9px] font-black uppercase tracking-[0.2em] opacity-90">
-                        GH COIN | Compliance Monitor
+                        GH COIN | monitor de horometros
                     </span>
                 </div>
                 <div className="flex gap-4 text-[8px] font-bold opacity-50 uppercase tracking-tighter text-left">

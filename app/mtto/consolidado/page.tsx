@@ -42,6 +42,7 @@ interface ProgramaMtto {
     tipoProxMp: string;
     fecha_estimada_mtto: string;
     estado_alerta: 'VENCIDO' | 'URGENTE' | 'PROGRAMADO';
+    status: string; // ✅ NUEVA COLUMNA
 }
 
 export default function CalendarioMttoPage() {
@@ -97,8 +98,10 @@ export default function CalendarioMttoPage() {
 
     const dataFiltrada = useMemo(() => {
         const term = busqueda.toLowerCase();
-        // Usamos programacionBalanceada en lugar de programacion
         return programacionBalanceada.filter(p => {
+            // ✅ FILTRO DE SEGURIDAD: Solo mostrar operativos o inoperativos
+            const noEstaInmovilizada = p.status !== 'DESMOVILIZADO' && p.status !== 'INMOVILIZADAS';
+
             const cumpleBusqueda =
                 (p.placaRodaje || "").toLowerCase().includes(term) ||
                 (p.codigoEquipo || "").toLowerCase().includes(term) ||
@@ -118,7 +121,9 @@ export default function CalendarioMttoPage() {
                     }
                 } catch (e) { cumpleRango = false; }
             }
-            return cumpleBusqueda && cumpleRango;
+
+            // ✅ Retornamos solo si cumple con el filtro de status y la búsqueda
+            return noEstaInmovilizada && cumpleBusqueda && cumpleRango;
         });
     }, [programacionBalanceada, busqueda, fechaInicio, fechaFin]);
 
