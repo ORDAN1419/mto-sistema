@@ -46,12 +46,10 @@ export default function MaestroEquiposPage() {
         e.preventDefault();
         router.push('/historial-horometro');
       }
-      if (e.ctrlKey && e.key === 'm') {
-        e.preventDefault();
-        router.push('/mtto/consolidado');
-      }
+
       if (e.ctrlKey && e.key === '2') { e.preventDefault(); router.push('/rendimiento'); }
       if (e.ctrlKey && e.key === '5') { e.preventDefault(); router.push('/mtto/horometro'); }
+      if (e.ctrlKey && e.key === 'm') { e.preventDefault(); router.push('/mtto/consolidado'); }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);

@@ -45,10 +45,20 @@ function RendimientoContent() {
   const [sugerenciasConductor, setSugerenciasConductor] = useState<MaestroEquipo[]>([])
   const [indexSelConductor, setIndexSelConductor] = useState(-1)
 
+  // Modifica el estado inicial de formConductor
   const [formConductor, setFormConductor] = useState({
-    placaRodaje: '', codigoEquipo: '', descripcionEquipo: '', horometroInicial: '',
-    horometroFinal: '', detalleReporte: '', fechaReporte: obtenerFechaHoyLocal(), turno: 'T.D'
-  })
+    placaRodaje: '',
+    codigoEquipo: '',
+    descripcionEquipo: '',
+    horometroInicial: '',
+    horometroFinal: '',
+    detalleReporte: '',
+    fechaReporte: obtenerFechaHoyLocal(),
+    turno: 'T.D',
+    // ✅ Nuevos campos de referencia
+    horometroReferencia: null as number | null,
+    fechaReferencia: null as string | null
+  });
 
   const [mesSeleccionado, setMesSeleccionado] = useState(obtenerFechaHoyLocal().slice(0, 7))
   const [diaSeleccionado, setDiaSeleccionado] = useState('')
@@ -96,9 +106,20 @@ function RendimientoContent() {
     finally { setLoading(false) }
   }, [mesSeleccionado, diaSeleccionado, filtroGeneral]);
 
-  const handleSelectConductor = useCallback((eq: MaestroEquipo) => {
-    setFormConductor(prev => ({ ...prev, placaRodaje: eq.placaRodaje, codigoEquipo: eq.codigoEquipo || '', descripcionEquipo: eq.descripcionEquipo || '' }));
-    setBusquedaPlacaConductor(eq.placaRodaje);
+  const handleSelectConductor = useCallback((eq: any) => {
+    setFormConductor(prev => ({
+      ...prev,
+      placaRodaje: eq.placaRodaje,
+      codigoEquipo: eq.codigoEquipo || '',
+      descripcionEquipo: eq.descripcionEquipo || '',
+      horometroReferencia: eq.horometroMayor,
+      fechaReferencia: eq.ultima_fecha
+    }));
+
+    // Seteamos el visual (Alias)
+    setBusquedaPlacaConductor(eq.codigoEquipo || eq.placaRodaje);
+
+    // ✅ Forzamos el cierre de la lista de sugerencias
     setSugerenciasConductor([]);
     setIndexSelConductor(-1);
   }, []);
@@ -106,14 +127,40 @@ function RendimientoContent() {
   const handleGuardarConductor = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (duracionConductorNum > 24) return;
+
     try {
+      // ✅ DESESTRUCTURACIÓN: Separamos los datos de referencia para que no entren a la DB
+      const {
+        horometroReferencia,
+        fechaReferencia,
+        ...datosParaTabla
+      } = formConductor;
+
       const { error } = await supabase.from('reportesConductor').insert([{
-        ...formConductor,
+        ...datosParaTabla,
         horometroInicial: parseFloat(formConductor.horometroInicial),
-        horometroFinal: parseFloat(formConductor.horometroFinal)
+        horometroFinal: parseFloat(formConductor.horometroFinal),
+        // ✅ SOLUCIÓN AL DESFASE DE FECHA: 
+        // Enviamos el string directo del input (YYYY-MM-DD) para evitar conversiones UTC
+        fechaReporte: formConductor.fechaReporte
       }]);
+
       if (error) throw error;
-      setFormConductor({ placaRodaje: '', codigoEquipo: '', descripcionEquipo: '', horometroInicial: '', horometroFinal: '', detalleReporte: '', fechaReporte: fechaCalculada, turno: 'T.D' });
+
+      // Limpiar formulario (asegúrate de resetear los nuevos campos de referencia)
+      setFormConductor({
+        placaRodaje: '',
+        codigoEquipo: '',
+        descripcionEquipo: '',
+        horometroInicial: '',
+        horometroFinal: '',
+        detalleReporte: '',
+        fechaReporte: fechaCalculada,
+        turno: 'T.D',
+        horometroReferencia: null,
+        fechaReferencia: null
+      });
+
       setBusquedaPlacaConductor('');
       setIsConductorModalOpen(false);
       fetchRendimiento(true);
@@ -126,13 +173,27 @@ function RendimientoContent() {
 
   useEffect(() => {
     const timer = setTimeout(async () => {
-      if (!busquedaPlacaConductor) { setSugerenciasConductor([]); return; }
-      const t = busquedaPlacaConductor.replace(/[\s-]/g, '').toUpperCase();
-      const { data } = await supabase.from('maestroEquipos').select('placaRodaje, codigoEquipo, descripcionEquipo').or(`placaRodaje.ilike.%${t}%,codigoEquipo.ilike.%${t}%`).limit(5);
+      // ✅ MEJORA: Si el input está vacío o ya coincide con lo seleccionado, no buscar
+      if (!busquedaPlacaConductor ||
+        busquedaPlacaConductor === formConductor.placaRodaje ||
+        busquedaPlacaConductor === formConductor.codigoEquipo) {
+        setSugerenciasConductor([]);
+        return;
+      }
+
+      const tOriginal = busquedaPlacaConductor.toUpperCase();
+      const tLimpio = tOriginal.replace(/[\s-]/g, '');
+
+      const { data } = await supabase
+        .from('maestroEquipos')
+        .select('placaRodaje, "codigoEquipo", descripcionEquipo, horometroMayor, ultima_fecha')
+        .or(`placaRodaje.ilike.%${tOriginal}%,placaRodaje.ilike.%${tLimpio}%,"codigoEquipo".ilike.%${tOriginal}%,"codigoEquipo".ilike.%${tLimpio}%`)
+        .limit(5);
+
       if (data) setSugerenciasConductor(data);
     }, 150);
     return () => clearTimeout(timer);
-  }, [busquedaPlacaConductor]);
+  }, [busquedaPlacaConductor, formConductor.placaRodaje, formConductor.codigoEquipo]); // ✅ Dependencias actualizadas
 
   useEffect(() => {
     if (isConductorModalOpen) {
@@ -330,7 +391,8 @@ function RendimientoContent() {
                       <div className="absolute top-full left-0 right-0 bg-white border border-[#d3d7d9] shadow-xl z-[110] rounded-sm overflow-hidden text-left">
                         {sugerenciasConductor.map((eq, i) => (
                           <div key={i} onClick={() => handleSelectConductor(eq)} className={`p-2 cursor-pointer text-xs uppercase border-b border-[#f2f4f5] text-left ${indexSelConductor === i ? 'bg-[#0070b1] text-white' : 'hover:bg-[#f2f9ff]'}`}>
-                            <b>{eq.placaRodaje}</b> - <span className="opacity-70">{eq.codigoEquipo}</span>
+                            {/* ✅ Cambiado a eq.codigoEquipo para coincidir con el mapeo de la interfaz */}
+                            <b>{eq.placaRodaje}</b> - <span className="opacity-70">{(eq as any).codigoEquipo}</span>
                           </div>
                         ))}
                       </div>
@@ -345,13 +407,47 @@ function RendimientoContent() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
+                  {/* Columna de Lectura Inicial con Referencia */}
                   <div className="flex flex-col gap-2 text-center">
                     <label className="text-[10px] font-bold text-[#6a6d70] uppercase leading-none">Lectura Inicial</label>
-                    <input required type="number" step="any" value={formConductor.horometroInicial} onChange={(e) => setFormConductor({ ...formConductor, horometroInicial: e.target.value })} className="border border-[#b0b3b5] p-2 text-lg text-center rounded-sm font-mono font-bold outline-none focus:border-[#0070b1] bg-white shadow-inner" />
+                    <input
+                      required
+                      type="number"
+                      step="any"
+                      value={formConductor.horometroInicial}
+                      onChange={(e) => setFormConductor({ ...formConductor, horometroInicial: e.target.value })}
+                      className="border border-[#b0b3b5] p-2 text-lg text-center rounded-sm font-mono font-bold outline-none focus:border-[#0070b1] bg-white shadow-inner"
+                    />
+
+                    {/* ✅ DATOS DEL MAESTRO (Aparecen solo cuando hay un equipo seleccionado) */}
+                    {formConductor.horometroReferencia !== null && (
+                      <div className="mt-1 flex flex-col items-center animate-in fade-in slide-in-from-top-1">
+                        <div className="flex items-center gap-1.5 text-[9px] font-black text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
+                          <Gauge size={10} />
+                          <span>Ult. Horometro: {formConductor.horometroReferencia.toLocaleString()} H</span>
+                        </div>
+                        <span className="text-[8px] text-slate-400 mt-0.5 font-bold uppercase">
+                          ACT: {formConductor.fechaReferencia
+                            ? new Date(formConductor.fechaReferencia).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+                            : 'SIN FECHA'}
+                        </span>
+                      </div>
+                    )}
                   </div>
+
+                  {/* Columna de Lectura Final */}
                   <div className="flex flex-col gap-2 text-center">
                     <label className="text-[10px] font-bold text-[#6a6d70] uppercase leading-none">Lectura Final</label>
-                    <input required type="number" step="any" value={formConductor.horometroFinal} onChange={(e) => setFormConductor({ ...formConductor, horometroFinal: e.target.value })} className="border border-[#b0b3b5] p-2 text-lg text-center rounded-sm font-mono font-bold outline-none focus:border-[#0070b1] bg-white shadow-inner" />
+                    <input
+                      required
+                      type="number"
+                      step="any"
+                      value={formConductor.horometroFinal}
+                      onChange={(e) => setFormConductor({ ...formConductor, horometroFinal: e.target.value })}
+                      className="border border-[#b0b3b5] p-2 text-lg text-center rounded-sm font-mono font-bold outline-none focus:border-[#0070b1] bg-white shadow-inner"
+                    />
+                    {/* Espacio vacío para mantener la simetría si es necesario */}
+                    <div className="h-8 invisible" />
                   </div>
                 </div>
 

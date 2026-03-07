@@ -43,6 +43,7 @@ interface ProgramaMtto {
     fecha_estimada_mtto: string;
     estado_alerta: 'VENCIDO' | 'URGENTE' | 'PROGRAMADO';
     status: string; // ✅ NUEVA COLUMNA
+    ubic: string; // ✅ NUEVA COLUMNA
 }
 
 export default function CalendarioMttoPage() {
@@ -61,7 +62,7 @@ export default function CalendarioMttoPage() {
         try {
             const { data, error } = await supabase
                 .from('v_programa_mantenimiento_preventivo')
-                .select('*')
+                .select('*') // ✅ Asegúrate que la VISTA en la DB tenga la columna 'ubic'
             if (error) throw error;
             setProgramacion(data || [])
         } catch (err) {
@@ -74,22 +75,25 @@ export default function CalendarioMttoPage() {
     useEffect(() => { fetchProgramacion() }, [])
 
     // ✅ NUEVA LÓGICA: Redistribución de VENCIDOS por la semana actual sin alterar BD
+    // ✅ NUEVA LÓGICA: Distribución fija en 7 días rodantes
     const programacionBalanceada = useMemo(() => {
         const hoy = new Date();
-        const finDeSemana = endOfWeek(hoy, { weekStartsOn: 1 });
-        // Calculamos cuántos días quedan de hoy al domingo (mínimo 1)
-        const diasDisponibles = Math.max(differenceInDays(finDeSemana, hoy) + 1, 1);
+        // Definimos una ventana fija de 7 días a partir de hoy
+        const diasDisponibles = 7;
 
-        // Separamos vencidos de los demás
+        // Separamos vencidos de los demás y ordenamos por criticidad
         const vencidos = programacion.filter(p => p.estado_alerta === 'VENCIDO')
-            .sort((a, b) => a.horas_restantes - b.horas_restantes); // Los más críticos primero
+            .sort((a, b) => a.horas_restantes - b.horas_restantes);
 
         const otros = programacion.filter(p => p.estado_alerta !== 'VENCIDO');
 
-        // Repartimos los vencidos matemáticamente en los días que quedan de la semana
+        // Repartimos los vencidos en la ventana de 7 días
         const vencidosRedistribuidos = vencidos.map((p, index) => {
+            // El offset ahora siempre cicla del 0 al 6 (7 días)
             const offset = index % diasDisponibles;
+            // Sumamos los días a la fecha actual
             const nuevaFechaSugerida = format(addDays(hoy, offset), 'yyyy-MM-dd');
+
             return { ...p, fecha_estimada_mtto: nuevaFechaSugerida };
         });
 
@@ -97,19 +101,27 @@ export default function CalendarioMttoPage() {
     }, [programacion]);
 
     const dataFiltrada = useMemo(() => {
-        const term = busqueda.toLowerCase();
+        // 1. Limpiamos el término y lo dividimos por espacios
+        const palabrasBusqueda = busqueda.toLowerCase().split(' ').filter(p => p !== '');
+
         return programacionBalanceada.filter(p => {
             // ✅ FILTRO DE SEGURIDAD: Solo mostrar operativos o inoperativos
             const noEstaInmovilizada = p.status !== 'DESMOVILIZADO' && p.status !== 'INMOVILIZADAS';
 
-            const cumpleBusqueda =
-                (p.placaRodaje || "").toLowerCase().includes(term) ||
-                (p.codigoEquipo || "").toLowerCase().includes(term) ||
-                (p.marca || "").toLowerCase().includes(term) ||
-                (p.modelo || "").toLowerCase().includes(term) ||
-                (p.descripcionEquipo || "").toLowerCase().includes(term) ||
-                (p.estado_alerta || "").toLowerCase().includes(term);
+            // 2. Lógica de "Cada palabra debe encontrarse en algún lugar"
+            const cumpleBusqueda = palabrasBusqueda.every(palabra => {
+                return (
+                    (p.placaRodaje || "").toLowerCase().includes(palabra) ||
+                    (p.codigoEquipo || "").toLowerCase().includes(palabra) ||
+                    (p.marca || "").toLowerCase().includes(palabra) ||
+                    (p.modelo || "").toLowerCase().includes(palabra) ||
+                    (p.descripcionEquipo || "").toLowerCase().includes(palabra) ||
+                    (p.estado_alerta || "").toLowerCase().includes(palabra) ||
+                    (p.ubic || "").toLowerCase().includes(palabra)
+                );
+            });
 
+            // 3. Filtro de Rango de Fechas (se mantiene igual)
             let cumpleRango = true;
             if (fechaInicio && fechaFin) {
                 try {
@@ -122,7 +134,6 @@ export default function CalendarioMttoPage() {
                 } catch (e) { cumpleRango = false; }
             }
 
-            // ✅ Retornamos solo si cumple con el filtro de status y la búsqueda
             return noEstaInmovilizada && cumpleBusqueda && cumpleRango;
         });
     }, [programacionBalanceada, busqueda, fechaInicio, fechaFin]);
@@ -164,7 +175,8 @@ export default function CalendarioMttoPage() {
                     `${Number(p.horometro_objetivo_mtto || 0).toLocaleString()} H`,
                     `${Number(p.horas_restantes).toFixed(1)} H`,
                     `${Number(p.horometraje_actual).toFixed(1)} H`,
-                    p.estado_alerta
+                    p.estado_alerta,
+                    p.ubic,
                 ]),
                 headStyles: { fillColor: [53, 74, 95], fontSize: 8 },
                 styles: { fontSize: 7, valign: 'middle' },
@@ -319,7 +331,7 @@ export default function CalendarioMttoPage() {
                                         {mttos.map((mtto) => (
                                             <div key={mtto.placaRodaje} className={`p-2 rounded-sm transition-all hover:scale-[1.02] border border-black/5 ${getStatusStyles(mtto.estado_alerta)} shadow-sm`}>
                                                 <div className="flex justify-between items-start mb-1 gap-1">
-                                                    <span className="text-[11px] font-black uppercase truncate">{mtto.placaRodaje}</span>
+                                                    <span className="text-[11px] font-black uppercase truncate">{mtto.codigoEquipo}</span>
                                                     <span className="text-[8px] font-black bg-white/40 px-1.5 rounded uppercase border border-black/5">{mtto.tipoProxMp}</span>
                                                 </div>
                                                 <div className="text-[8px] font-bold uppercase opacity-90 truncate mb-1 text-left border-b border-black/5 pb-1">{mtto.descripcionEquipo}</div>
@@ -329,6 +341,15 @@ export default function CalendarioMttoPage() {
                                                     <div className="flex flex-col gap-0.5 bg-black/5 p-1 rounded-sm">
                                                         <div className="flex justify-between text-[8px] font-medium text-slate-600 leading-none"><span>Act:</span><span className="font-bold">{Number(mtto.horometraje_actual || 0).toLocaleString()}</span></div>
                                                         <div className="flex justify-between text-[8px] font-medium text-slate-600 leading-none"><span>Obj:</span><span className="font-bold text-blue-700">{Number(mtto.horometro_objetivo_mtto || 0).toLocaleString()}</span></div>
+                                                        <div className="flex justify-between text-[8px] font-medium text-slate-600 leading-none mt-1 border-t border-black/5 pt-1">
+                                                            <div className="flex justify-between text-[8px] font-medium text-slate-600 leading-none mt-1 border-t border-black/5 pt-1">
+                                                                <span>Ubic:</span>
+                                                                <span className="font-bold text-blue-700">
+                                                                    {mtto.ubic ? mtto.ubic : 'SIN UBIC'}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+
                                                     </div>
 
                                                     <div className="flex justify-between items-center mt-1 border-t border-black/5 pt-1 leading-none">

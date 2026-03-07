@@ -71,6 +71,9 @@ export default function EstadoGeneralPage() {
   const [nuevaUbicacion, setNuevaUbicacion] = useState('')
   const [showVisualLlantas, setShowVisualLlantas] = useState(false)
   const [montajeVisual, setMontajeVisual] = useState<any[]>([])
+  const [promedio15Dias, setPromedio15Dias] = useState<number | null>(null)
+  const [datosGrafico, setDatosGrafico] = useState<{ fecha: string, horometro: number }[]>([])
+  const [showGrafico, setShowGrafico] = useState(false)
 
   const fetchEstadoActual = useCallback(async () => {
     try {
@@ -128,6 +131,48 @@ export default function EstadoGeneralPage() {
     const { data } = await supabase.from('horometro').select('*').eq('placaRodaje', placa).order('created_at', { ascending: false }).limit(3)
     setHistorialModal(data || [])
   }, [])
+  const fetchPromedio15Dias = useCallback(async (placa: string) => {
+    try {
+      const hace15Dias = new Date();
+      hace15Dias.setDate(hace15Dias.getDate() - 15);
+      const fechaLimite = hace15Dias.toISOString().split('T')[0];
+
+      const { data, error } = await supabase
+        .from('histoHorometros')
+        .select('horometro')
+        .eq('placa', placa)
+        .gte('fecha', fechaLimite)
+        .order('horometro', { ascending: true });
+
+      if (error) throw error;
+
+      if (data && data.length >= 2) {
+        const horoMin = data[0].horometro;
+        const horoMax = data[data.length - 1].horometro;
+        // Fórmula solicitada: (Max - Min) / 15
+        const promedio = (horoMax - horoMin) / 15;
+        setPromedio15Dias(promedio);
+      } else {
+        setPromedio15Dias(0);
+      }
+    } catch (err) {
+      console.error("Error calculando promedio:", err);
+      setPromedio15Dias(null);
+    }
+  }, []);
+
+  const fetchDatosGrafico = useCallback(async (placa: string) => {
+    const hace7Dias = new Date();
+    hace7Dias.setDate(hace7Dias.getDate() - 7);
+    const { data } = await supabase
+      .from('histoHorometros')
+      .select('fecha, horometro')
+      .eq('placa', placa)
+      .gte('fecha', hace7Dias.toISOString().split('T')[0])
+      .order('fecha', { ascending: true });
+
+    if (data) setDatosGrafico(data);
+  }, []);
 
   const abrirVisualizacionLlantas = async () => {
     if (!equipoSeleccionado) return;
@@ -203,12 +248,23 @@ export default function EstadoGeneralPage() {
   useEffect(() => {
     if (equipoSeleccionado) {
       fetchHistorial(equipoSeleccionado.placaRodaje);
-      setForm({ inicio: equipoSeleccionado.horometroMayor?.toString() || '0', final: '', fecha: obtenerFechaHoyLocal() })
+      fetchPromedio15Dias(equipoSeleccionado.placaRodaje);
+
+      // ✅ Si el gráfico está abierto, recargamos sus datos inmediatamente para la nueva placa
+      if (showGrafico) {
+        fetchDatosGrafico(equipoSeleccionado.placaRodaje);
+      }
+
+      setForm({
+        inicio: equipoSeleccionado.horometroMayor?.toString() || '0',
+        final: '',
+        fecha: obtenerFechaHoyLocal()
+      })
       setNuevaConfigEjes(equipoSeleccionado.configuracion_ejes || '')
       setNuevaFrecuencia(equipoSeleccionado.frecuencia?.toString() || '')
       setNuevaUbicacion(equipoSeleccionado.ubic || '')
     }
-  }, [equipoSeleccionado, fetchHistorial])
+  }, [equipoSeleccionado, fetchHistorial, fetchPromedio15Dias, fetchDatosGrafico, showGrafico])
 
   const kpiSalud = useMemo(() => {
     const gestionados = equipos.filter(e => e.desface !== null);
@@ -218,6 +274,16 @@ export default function EstadoGeneralPage() {
       cumplimiento: Math.round(((gestionados.length - gestionados.filter(e => e.desface! <= 0).length) / gestionados.length) * 100),
       confiabilidad: Math.round((equipos.filter(e => e.status?.toLowerCase() === 'operativo').length / equipos.length) * 100),
       vencidos: gestionados.filter(e => e.desface! <= 0).length
+    };
+  }, [equipos]);
+
+  const conteosLeyenda = useMemo(() => {
+    return {
+      saludable: equipos.filter(e => e.status?.toUpperCase() === 'OPERATIVO' && e.desface! > 24).length,
+      proximo: equipos.filter(e => e.status?.toUpperCase() === 'OPERATIVO' && e.desface! > 0 && e.desface! <= 24).length,
+      vencido: equipos.filter(e => e.status?.toUpperCase() === 'OPERATIVO' && e.desface! <= 0).length,
+      inoperativo: equipos.filter(e => e.status?.toUpperCase() === 'INOPERATIVO').length,
+      desmovilizado: equipos.filter(e => e.status?.toUpperCase() === 'DESMOVILIZADO').length,
     };
   }, [equipos]);
 
@@ -280,8 +346,41 @@ export default function EstadoGeneralPage() {
         <div className="flex items-center gap-4 text-left leading-none">
           <ArrowLeft size={18} onClick={() => router.back()} className="cursor-pointer hover:opacity-70" />
           <div className="h-6 w-px bg-white/20" />
-          <span className="font-bold text-xs tracking-wider uppercase italic leading-none">Monitor de las unidades</span>
+          <div className="flex flex-col">
+            <span className="font-bold text-[10px] tracking-wider uppercase italic leading-none">Monitor de las unidades</span>
+            <span className="text-[7px] opacity-50 font-black uppercase">Gestión de Flota Real-Time</span>
+          </div>
+
+          {/* ✅ LEYENDA DINÁMICA CON CONTEOS */}
+          <div className="hidden xl:flex items-center gap-3 bg-black/20 px-3 py-1.5 rounded-sm border border-white/10 ml-2">
+            <div className="flex items-center gap-1.5 border-r border-white/10 pr-2">
+              <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]" />
+              <span className="text-[8px] font-black uppercase opacity-70">Saludable:</span>
+              <span className="text-[9px] font-mono font-bold text-emerald-400">{conteosLeyenda.saludable}</span>
+            </div>
+            <div className="flex items-center gap-1.5 border-r border-white/10 pr-2">
+              <div className="w-2 h-2 rounded-full bg-amber-500" />
+              <span className="text-[8px] font-black uppercase opacity-70">Próximo:</span>
+              <span className="text-[9px] font-mono font-bold text-amber-400">{conteosLeyenda.proximo}</span>
+            </div>
+            <div className="flex items-center gap-1.5 border-r border-white/10 pr-2">
+              <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+              <span className="text-[8px] font-black uppercase opacity-70">Vencido:</span>
+              <span className="text-[9px] font-mono font-bold text-rose-400">{conteosLeyenda.vencido}</span>
+            </div>
+            <div className="flex items-center gap-1.5 border-r border-white/10 pr-2">
+              <div className="w-2 h-2 rounded-full bg-purple-500" />
+              <span className="text-[8px] font-black uppercase opacity-70">Inop:</span>
+              <span className="text-[9px] font-mono font-bold text-purple-300">{conteosLeyenda.inoperativo}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full bg-slate-400" />
+              <span className="text-[8px] font-black uppercase opacity-70">Desmov:</span>
+              <span className="text-[9px] font-mono font-bold text-slate-300">{conteosLeyenda.desmovilizado}</span>
+            </div>
+          </div>
         </div>
+
         <div className="flex items-center gap-4 text-left leading-none">
           <button
             onClick={() => setShowVencidosModal(true)}
@@ -292,7 +391,7 @@ export default function EstadoGeneralPage() {
           </button>
           <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-white/50" size={14} />
-            <input ref={inputBusquedaRef} value={busqueda} onChange={(e) => setBusqueda(e.target.value)} className="bg-white/10 border border-white/20 rounded-sm py-1 pl-8 pr-2 text-xs outline-none focus:bg-white focus:text-slate-900 transition-all w-64 font-bold" placeholder="Buscar Placa o Grupo..." />
+            <input ref={inputBusquedaRef} value={busqueda} onChange={(e) => setBusqueda(e.target.value)} className="bg-white/10 border border-white/20 rounded-sm py-1 pl-8 pr-2 text-xs outline-none focus:bg-white focus:text-slate-900 transition-all w-64 font-bold uppercase" placeholder="Buscar Placa o Grupo..." />
           </div>
           <HelpCircle size={18} className="cursor-pointer opacity-80 hover:opacity-100" onClick={() => setIsHelpModalOpen(true)} />
         </div>
@@ -321,32 +420,57 @@ export default function EstadoGeneralPage() {
 
             <div className="p-4 space-y-6 text-left bg-white">
               {Object.entries(equiposAgrupados).map(([grupo, lista]) => (
-                <div key={grupo} className="space-y-2">
-                  <div className="flex items-center gap-2 border-b border-slate-100 pb-1 leading-none">
-                    <Box size={12} className="text-slate-300" />
-                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">{grupo}</h3>
+                <div key={grupo} className="mb-8 w-full"> {/* Margen inferior para separar grupos */}
+                  <div className="flex items-center gap-2 border-b border-slate-200 pb-2 mb-4">
+                    <Box size={14} className="text-slate-400" />
+                    <h3 className="text-[11px] font-black text-slate-500 uppercase tracking-widest">{grupo}</h3>
                     <div className="h-px flex-grow border-b border-dashed border-slate-300/60" />
                   </div>
-                  <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-10 gap-1">
-                    {lista.map(eq => {
-                      // ✅ Lógica de colores por estado y desfase
-                      let color = 'bg-emerald-600'; // Por defecto saludable
-                      const status = eq.status?.toUpperCase();
 
-                      if (status === 'DESMOVILIZADO') {
-                        color = 'bg-slate-500'; // Gris para desmovilizados
-                      } else if (status === 'INOPERATIVO') {
-                        color = 'bg-purple-600'; // Morado para inoperativos
-                      } else {
-                        // Si está Operativo, aplicamos colores de desfase
+                  {/* GRID CORREGIDO: Ajustado para que las tarjetas no se amontonen */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-4">
+                    {lista.map(eq => {
+                      // Lógica de colores de desfase
+                      let color = 'bg-emerald-600';
+                      const status = eq.status?.toUpperCase();
+                      if (status === 'DESMOVILIZADO') color = 'bg-slate-500';
+                      else if (status === 'INOPERATIVO') color = 'bg-purple-600';
+                      else {
                         if (eq.desface! <= 0) color = 'bg-rose-600';
                         else if (eq.desface! <= 24) color = 'bg-amber-500';
                       }
 
+                      // Lógica de colores de ubicación
+                      const ubicUpper = eq.ubic?.toUpperCase() || '';
+                      let colorUbic = 'text-slate-500';
+                      if (ubicUpper.startsWith('T.')) colorUbic = 'text-blue-600 font-bold';
+                      else if (ubicUpper === 'MINADO') colorUbic = 'text-orange-600 font-bold';
+
                       return (
-                        <button key={eq.placaRodaje} onClick={() => setEquipoSeleccionado(eq)} className={`flex flex-col border border-[#d3d7d9] rounded-sm overflow-hidden hover:border-[#0070b1] transition-all group ${equipoSeleccionado?.placaRodaje === eq.placaRodaje ? 'ring-2 ring-[#0070b1]' : ''}`}>
-                          <div className="bg-[#f7f9fa] py-1 text-[8px] font-bold text-[#6a6d70] truncate px-1 uppercase leading-none">{eq.codigoEquipo}</div>
-                          <div className={`${color} py-1 text-[10px] font-mono font-bold text-white leading-none text-center`}>{eq.desface?.toFixed(1)}</div>
+                        <button
+                          key={eq.placaRodaje}
+                          onClick={() => setEquipoSeleccionado(eq)}
+                          className={`flex flex-col w-full min-h-[90px] border border-[#d3d7d9] rounded-md overflow-hidden hover:border-[#0070b1] transition-all bg-white shadow-sm hover:shadow-md active:scale-95 ${equipoSeleccionado?.placaRodaje === eq.placaRodaje ? 'ring-2 ring-[#0070b1]' : ''}`}
+                        >
+                          {/* Cabecera: Código del Equipo */}
+                          <div className="bg-[#f7f9fa] py-2 text-[10px] font-black text-[#32363a] truncate px-2 uppercase border-b border-slate-100">
+                            {eq.codigoEquipo}
+                          </div>
+
+                          {/* Centro: Valor del Desfase (Grande y centrado) */}
+                          <div className={`${color} flex-grow flex items-center justify-center py-3`}>
+                            <span className="text-sm font-mono font-black text-white">
+                              {eq.desface?.toFixed(1)}
+                            </span>
+                          </div>
+
+                          {/* Pie: Ubicación con icono */}
+                          <div className={`bg-white py-1.5 px-2 border-t border-slate-100 flex items-center justify-center gap-1.5 ${colorUbic}`}>
+                            <MapPin size={10} />
+                            <span className="text-[9px] uppercase truncate leading-none">
+                              {eq.ubic || 'SIN UBICACIÓN'}
+                            </span>
+                          </div>
                         </button>
                       )
                     })}
@@ -358,7 +482,7 @@ export default function EstadoGeneralPage() {
         </div>
 
         {equipoSeleccionado && (
-          <div className="w-1/3 bg-white border border-[#d3d7d9] shadow-xl rounded-sm flex flex-col animate-in slide-in-from-right duration-300">
+          <div className="w-1/3 bg-white border border-[#d3d7d9] shadow-xl rounded-sm flex flex-col animate-in slide-in-from-right duration-300 sticky top-16 h-fit max-h-[calc(100vh-80px)] overflow-y-auto">
             <div className="p-4 border-b border-[#d3d7d9] bg-[#f7f9fa] flex justify-between items-center text-left leading-none">
               <div className="leading-none text-left flex flex-col gap-1">
                 <h2 className="text-xl font-light text-[#0070b1] uppercase tracking-tight leading-none mb-1 font-sans antialiased">{equipoSeleccionado.placaRodaje}</h2>
@@ -488,6 +612,45 @@ export default function EstadoGeneralPage() {
               <button onClick={() => router.push(`/eventos?placa=${equipoSeleccionado.placaRodaje}`)} className="w-full py-3 border-2 border-slate-800 text-slate-800 rounded-sm font-black text-[10px] uppercase flex items-center justify-center gap-3 hover:bg-slate-800 hover:text-white transition-all tracking-widest leading-none">
                 <Construction size={16} /> Crear Orden Intervención
               </button>
+              {/* INDICADORES DE RENDIMIENTO REAL CON CLICK */}
+              <div
+                onClick={() => {
+                  if (!showGrafico) fetchDatosGrafico(equipoSeleccionado!.placaRodaje);
+                  setShowGrafico(!showGrafico);
+                }}
+                className="mt-4 pt-4 border-t border-slate-200 space-y-3 bg-[#f8f9fa] p-3 rounded-sm cursor-pointer hover:bg-slate-100 transition-all border-l-4 border-l-[#0070b1]"
+              >
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <Activity size={14} className="text-[#0070b1]" />
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-tight">Utilización Real (Últ. 15 días)</span>
+                  </div>
+                  <ChevronRight size={14} className={`text-slate-400 transition-transform ${showGrafico ? 'rotate-90' : ''}`} />
+                </div>
+
+                <div className="flex justify-between items-end">
+                  <div className="leading-none text-left">
+                    <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Ritmo Promedio</p>
+                    <p className="text-xl font-mono font-black text-slate-700 leading-none">
+                      {promedio15Dias !== null ? promedio15Dias.toFixed(2) : '---'}
+                      <span className="text-[10px] ml-1 font-bold text-slate-400 italic">H/DÍA</span>
+                    </p>
+                  </div>
+                  <div className={`text-xs font-black px-2 py-1 rounded-sm ${promedio15Dias && promedio15Dias > 18 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                    {promedio15Dias ? ((promedio15Dias / 24) * 100).toFixed(1) : '0'}%
+                  </div>
+                </div>
+
+                {/* ✅ GRÁFICO TIPO SPARKLINE (Solo aparece si showGrafico es true) */}
+                {showGrafico && (
+                  <div className="mt-4 pt-4 border-t border-slate-200 animate-in fade-in slide-in-from-top-2">
+                    <p className="text-[8px] font-black text-slate-400 uppercase mb-2 text-center">Tendencia Horómetros (7 días)</p>
+                    <div className="h-48 w-full bg-white border border-slate-100 rounded-sm p-2">
+                      <LineChartSVG data={datosGrafico} />
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -625,6 +788,97 @@ export default function EstadoGeneralPage() {
     </main>
   )
 }
+
+function LineChartSVG({ data }: { data: { fecha: string, horometro: number }[] }) {
+  if (!data || data.length < 2) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center border-2 border-dashed border-slate-100 rounded">
+        <Activity size={20} className="text-slate-200 mb-1" />
+        <span className="text-[9px] text-slate-400 font-bold uppercase">Sin registros suficientes</span>
+      </div>
+    );
+  }
+
+  const width = 300;
+  const height = 120; // Un poco más alto para los números
+  const padding = 25; // Más espacio para etiquetas
+
+  const minH = Math.min(...data.map(d => d.horometro));
+  const maxH = Math.max(...data.map(d => d.horometro));
+  const range = maxH - minH || 1;
+
+  const getX = (i: number) => (i / (data.length - 1)) * (width - padding * 2) + padding;
+  const getY = (val: number) => height - ((val - minH) / range * (height - padding * 2.5) + padding);
+
+  const points = data.map((d, i) => `${getX(i)},${getY(d.horometro)}`).join(' ');
+
+  return (
+    <div className="relative w-full h-full bg-white rounded-sm p-1">
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full overflow-visible">
+        {/* Guías horizontales de fondo */}
+        <line x1={padding} y1={getY(minH)} x2={width - padding} y2={getY(minH)} stroke="#f1f5f9" strokeWidth="1" />
+        <line x1={padding} y1={getY(maxH)} x2={width - padding} y2={getY(maxH)} stroke="#f1f5f9" strokeWidth="1" />
+
+        {/* Área degradada */}
+        <polyline
+          fill="url(#gradient)"
+          points={`${getX(0)},${height - 5} ${points} ${getX(data.length - 1)},${height - 5}`}
+          className="opacity-50"
+        />
+
+        <defs>
+          <linearGradient id="gradient" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="#0070b1" stopOpacity="0.3" />
+            <stop offset="100%" stopColor="#0070b1" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+
+        {/* Línea principal */}
+        <polyline
+          fill="none"
+          stroke="#0070b1"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          points={points}
+        />
+
+        {/* Puntos con valores fijos */}
+        {data.map((d, i) => {
+          const x = getX(i);
+          const y = getY(d.horometro);
+          const fechaCorta = d.fecha ? d.fecha.substring(8, 10) : "";
+
+          return (
+            <g key={i}>
+              {/* Valor numérico sobre el punto (Siempre visible) */}
+              <text
+                x={x}
+                y={y - 8}
+                fontSize="9"
+                fill="#354a5f"
+                fontWeight="900"
+                textAnchor="middle"
+                className="font-mono"
+              >
+                {d.horometro.toFixed(0)}
+              </text>
+
+              {/* Punto circular */}
+              <circle cx={x} cy={y} r="3.5" fill="white" stroke="#0070b1" strokeWidth="2" />
+
+              {/* Día en el eje X */}
+              <text x={x} y={height} fontSize="7" fill="#94a3b8" fontWeight="bold" textAnchor="middle">
+                {fechaCorta}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 
 function MiniTireVisual({ pos, info }: any) {
   const colors: any = { 'VERDE': 'bg-emerald-500', 'AMARILLO': 'bg-amber-400', 'NARANJA': 'bg-orange-500', 'ROJO': 'bg-rose-600' }
