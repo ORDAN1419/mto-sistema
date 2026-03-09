@@ -9,7 +9,9 @@ import {
   ChevronRight, ArrowUpCircle, Clock, Wrench, ShieldCheck, ShieldAlert,
   LayoutGrid, RefreshCw, Box, Activity, Target, AlertOctagon, CheckCircle2,
   MapPin, ClipboardList, Construction, LogOut, FileText, HelpCircle,
-  Settings2, CalendarDays, Zap, Settings, Layers, Calendar, ListFilter
+  Settings2, CalendarDays, Zap, Settings, Layers, Calendar, ListFilter,
+  User, Package, PenTool
+
 } from 'lucide-react'
 
 // ... (obtenerFechaHoyLocal e interfaces se mantienen igual)
@@ -74,6 +76,41 @@ export default function EstadoGeneralPage() {
   const [promedio15Dias, setPromedio15Dias] = useState<number | null>(null)
   const [datosGrafico, setDatosGrafico] = useState<{ fecha: string, horometro: number }[]>([])
   const [showGrafico, setShowGrafico] = useState(false)
+  const [nuevoTipoMp, setNuevoTipoMp] = useState('')
+
+  // ✅ Estados para el Modal de Plantilla
+  const [showPlantillaModal, setShowPlantillaModal] = useState(false);
+  const [insumosPlantilla, setInsumosPlantilla] = useState<any[]>([]);
+  const [soloRequeridos, setSoloRequeridos] = useState(false);
+  const [showEventosModal, setShowEventosModal] = useState(false);
+  const [eventosEquipo, setEventosEquipo] = useState<any[]>([]);
+  const [conteoEventos, setConteoEventos] = useState(0);
+  const [verEventoDetalle, setVerEventoDetalle] = useState<any | null>(null);
+  const [repuestosDelEvento, setRepuestosDelEvento] = useState<any[]>([]);
+
+
+  // ✅ Función para cargar los detalles y repuestos al hacer clic en una fila
+  // ✅ Función corregida con los nombres exactos de tus tablas SQL
+  const abrirDetalleSAP = async (evento: any) => {
+    setLoading(true);
+
+    // 1. Consultamos la tabla "repUsadosMtto" usando "eventoId"
+    const { data, error } = await supabase
+      .from('repUsadosMtto')
+      .select('*')
+      .eq('eventoId', evento.id); // Usamos el ID del trabajo para traer sus repuestos
+
+    if (error) {
+      console.error("Error cargando insumos:", error.message);
+      setRepuestosDelEvento([]);
+    } else {
+      setRepuestosDelEvento(data || []);
+    }
+
+    // 2. Abrimos el modal con la información del trabajo
+    setVerEventoDetalle(evento);
+    setLoading(false);
+  };
 
   const fetchEstadoActual = useCallback(async () => {
     try {
@@ -190,8 +227,10 @@ export default function EstadoGeneralPage() {
       const { error } = await supabase.from('maestroEquipos').update({
         configuracion_ejes: nuevaConfigEjes,
         frecuencia: nuevaFrecuencia ? parseInt(nuevaFrecuencia) : equipoSeleccionado.frecuencia,
-        ubic: nuevaUbicacion
+        ubic: nuevaUbicacion,
+        tipoProxMp: nuevoTipoMp.toUpperCase().trim() // <-- AGREGAR ESTA LÍNEA
       }).eq('placaRodaje', equipoSeleccionado.placaRodaje);
+
       if (error) throw error;
       alert("✅ Datos maestros actualizados");
       setShowEjesModal(false);
@@ -240,10 +279,30 @@ export default function EstadoGeneralPage() {
       if (e.altKey && e.key.toLowerCase() === 'q') { e.preventDefault(); fetchEstadoActual(); }
       if ((e.key === 'Enter' || e.key === 'Escape') && showVisualLlantas) setShowVisualLlantas(false);
       if (e.key === 'Escape' && showVencidosModal) setShowVencidosModal(false);
+      if (e.ctrlKey && e.altKey && e.key === '0') { e.preventDefault(); router.push('/eventos'); }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [router, fetchEstadoActual, showVisualLlantas, showVencidosModal, equiposFiltradosActuales]);
+
+  useEffect(() => {
+    const obtenerConteo = async () => {
+      if (!equipoSeleccionado) {
+        setConteoEventos(0);
+        return;
+      }
+
+      const { count, error } = await supabase
+        .from('historial_eventos')
+        .select('*', { count: 'exact', head: true })
+        .eq('placa', equipoSeleccionado.placaRodaje);
+
+      if (!error) setConteoEventos(count || 0);
+    };
+
+    obtenerConteo();
+  }, [equipoSeleccionado]);
+
 
   useEffect(() => {
     if (equipoSeleccionado) {
@@ -263,6 +322,7 @@ export default function EstadoGeneralPage() {
       setNuevaConfigEjes(equipoSeleccionado.configuracion_ejes || '')
       setNuevaFrecuencia(equipoSeleccionado.frecuencia?.toString() || '')
       setNuevaUbicacion(equipoSeleccionado.ubic || '')
+      setNuevoTipoMp(equipoSeleccionado.tipoProxMp || '')
     }
   }, [equipoSeleccionado, fetchHistorial, fetchPromedio15Dias, fetchDatosGrafico, showGrafico])
 
@@ -339,6 +399,55 @@ export default function EstadoGeneralPage() {
       alert("✅ Horómetro sincronizado");
     } catch (err) { alert("Error al guardar") } finally { setEnviando(false) }
   }
+
+  // ✅ Función para cargar los insumos filtrados por modelo y PM
+  const abrirPlantillaMantenimiento = async () => {
+    // ✅ Elimina error de TypeScript "possibly null"
+    if (!equipoSeleccionado) return;
+
+    setLoading(true);
+    const proximoMp = equipoSeleccionado.tipoProxMp;
+    const marcaEquipo = equipoSeleccionado.marca;
+    const modeloEquipo = equipoSeleccionado.modelo;
+
+    // ✅ Llave para identificar qué fila lleva la "X"
+    const etiquetaActiva = `${marcaEquipo} - ${modeloEquipo}:${proximoMp}`;
+
+    const { data } = await supabase.from('insumosmp_maestros').select('*');
+
+    if (data) {
+      // ✅ TRAEMOS TODO: Filtramos por modelo para tener la lista completa del equipo
+      const todosDelModelo = data.filter(insumo =>
+        insumo.modelo?.includes(modeloEquipo)
+      );
+
+      // ✅ PROCESAMOS: Marcamos línea por línea quién pertenece al PM actual
+      const procesados = todosDelModelo.map(insumo => ({
+        ...insumo,
+        esActivoEnEstePM: insumo.aplicacion_pms?.includes(etiquetaActiva)
+      }));
+
+      setInsumosPlantilla(procesados);
+    }
+
+    setShowPlantillaModal(true);
+    setLoading(false);
+  };
+
+  // ✅ Cargar historial de eventos desde la tabla historial_eventos
+  const abrirHistorialEventos = async () => {
+    if (!equipoSeleccionado) return;
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('historial_eventos')
+      .select('*')
+      .eq('placa', equipoSeleccionado.placaRodaje)
+      .order('fecha_evento', { ascending: false });
+
+    if (data) setEventosEquipo(data);
+    setShowEventosModal(true);
+    setLoading(false);
+  };
 
   return (
     <main className="min-h-screen bg-[#f7f9fa] text-[#32363a] font-sans text-left leading-none">
@@ -510,10 +619,27 @@ export default function EstadoGeneralPage() {
 
             <div className="p-5 space-y-6 overflow-y-auto">
               <div className="space-y-3 bg-[#eff4f9] p-4 border border-[#b0ccf0] rounded-sm text-left">
+
                 <div className="flex justify-between items-center border-b border-[#b0ccf0] pb-2 mb-3">
                   <h4 className="text-[10px] font-black text-[#0070b1] uppercase flex items-center gap-2 leading-none"><Settings2 size={12} /> Planificación</h4>
                   <button onClick={() => setShowEjesModal(true)} className="p-1 hover:bg-[#0070b1] hover:text-white rounded-sm text-[#0070b1] transition-all"><Settings size={14} /></button>
                 </div>
+
+                {/* ✅ PEGA EL BOTÓN AQUÍ */}
+                <button
+                  onClick={abrirPlantillaMantenimiento}
+                  className="w-full flex items-center justify-between bg-emerald-600 hover:bg-emerald-700 text-white p-3 rounded-sm transition-all shadow-lg active:scale-95 group mb-4"
+                >
+                  <div className="flex items-center gap-2">
+                    <ClipboardList size={18} />
+                    <div className="flex flex-col items-start leading-none">
+                      <span className="text-[10px] font-black uppercase tracking-widest">Ver Plantilla</span>
+                      <span className="text-[8px] opacity-80 uppercase font-bold">Insumos para {equipoSeleccionado.tipoProxMp}</span>
+                    </div>
+                  </div>
+                  <ChevronRight size={16} className="group-hover:translate-x-1 transition-transform" />
+                </button>
+
                 <div className="grid grid-cols-2 gap-4 text-left leading-none border-b border-[#b0ccf0]/50 pb-3">
                   <div className="flex flex-col items-start text-left">
                     <p className="text-[9px] font-bold text-[#6a6d70] uppercase mb-1 leading-none tracking-wide">Último MP Ejecutado</p>
@@ -612,6 +738,16 @@ export default function EstadoGeneralPage() {
               <button onClick={() => router.push(`/eventos?placa=${equipoSeleccionado.placaRodaje}`)} className="w-full py-3 border-2 border-slate-800 text-slate-800 rounded-sm font-black text-[10px] uppercase flex items-center justify-center gap-3 hover:bg-slate-800 hover:text-white transition-all tracking-widest leading-none">
                 <Construction size={16} /> Crear Orden Intervención
               </button>
+
+              <button
+                onClick={abrirHistorialEventos}
+                className="w-full py-3 border-2 border-[#0070b1] text-[#0070b1] rounded-sm font-black text-[10px] uppercase flex items-center justify-center gap-3 hover:bg-[#0070b1] hover:text-white transition-all tracking-widest leading-none mb-2"
+              >
+                <History size={16} />
+                VER HISTORIAL DE TRABAJOS ({conteoEventos.toString().padStart(2, '0')})
+              </button>
+
+
               {/* INDICADORES DE RENDIMIENTO REAL CON CLICK */}
               <div
                 onClick={() => {
@@ -745,6 +881,7 @@ export default function EstadoGeneralPage() {
               <X size={16} className="cursor-pointer" onClick={() => setShowEjesModal(false)} />
             </div>
             <div className="p-5 space-y-4 bg-white text-left">
+              {/* Esquema */}
               <div className="space-y-1 text-left leading-none">
                 <label className="text-[9px] font-black text-slate-500 uppercase leading-none">Esquema Neumáticos</label>
                 <select value={nuevaConfigEjes} onChange={(e) => setNuevaConfigEjes(e.target.value)} className="w-full border p-2 text-xs rounded-sm font-bold bg-[#f8f9fa] outline-none">
@@ -757,14 +894,32 @@ export default function EstadoGeneralPage() {
                   <option value="4-4-4">Carreta S3 (4-4-4)</option>
                 </select>
               </div>
+
+              {/* Frecuencia */}
               <div className="space-y-1 text-left leading-none">
                 <label className="text-[9px] font-black text-[#0070b1] uppercase leading-none">Frecuencia MP (Hrs)</label>
                 <input type="number" value={nuevaFrecuencia} onChange={(e) => setNuevaFrecuencia(e.target.value)} className="w-full border-2 border-[#0070b1]/20 p-2 text-xs rounded-sm outline-none font-bold" />
               </div>
+
+              {/* Próximo Mantenimiento (Solo uno, corregido) */}
+              <div className="space-y-1 text-left leading-none">
+                <label className="text-[9px] font-black text-[#0070b1] uppercase leading-none">Próximo Mantenimiento</label>
+                <input
+                  type="text"
+                  value={nuevoTipoMp}
+                  onChange={(e) => setNuevoTipoMp(e.target.value.toUpperCase())}
+                  className="w-full border-2 border-[#0070b1]/20 p-2 text-xs rounded-sm outline-none font-bold"
+                  placeholder="EJ: PM1 / PM2-1"
+                />
+              </div>
+
+              {/* Ubicación */}
               <div className="space-y-1 text-left leading-none">
                 <label className="text-[9px] font-black text-[#0070b1] uppercase leading-none">Ubicación Actual</label>
                 <input type="text" value={nuevaUbicacion} onChange={(e) => setNuevaUbicacion(e.target.value.toUpperCase())} className="w-full border-2 border-[#0070b1]/20 p-2 text-xs rounded-sm outline-none font-bold" placeholder="EJ: TALLER / MINA" />
               </div>
+
+              {/* Botón Guardar */}
               <button onClick={guardarConfigMaestro} disabled={enviando} className="w-full bg-[#0070b1] text-white py-2.5 text-[10px] font-black uppercase rounded-sm flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 transition-all leading-none">
                 {enviando ? <Loader2 className="animate-spin" size={14} /> : <><Save size={14} /> Actualizar Maestro</>}
               </button>
@@ -785,6 +940,177 @@ export default function EstadoGeneralPage() {
           </div>
         </div>
       )}
+
+      {/* ✅ CARTILLA SAP S/4HANA: CON METAS TÉCNICAS Y FILTRO DE VISIBILIDAD */}
+      {showPlantillaModal && equipoSeleccionado && (
+        <div className="fixed inset-0 z-[500] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4 animate-in fade-in duration-150 text-left leading-none">
+          <div className="bg-white w-full max-w-5xl rounded-sm shadow-2xl flex flex-col max-h-[95vh] border border-[#354a5f] font-sans antialiased text-left leading-none">
+
+            {/* Cabecera Técnica SAP con Metas de Horómetro */}
+            <div className="bg-[#354a5f] p-4 flex justify-between items-start text-white border-b border-[#1a2b3c] text-left leading-none">
+              <div className="flex items-center gap-4 text-left leading-none">
+                <div className="bg-[#4a6276] p-2.5 rounded-sm border border-[#1a2b3c]/50 shadow-inner">
+                  <Wrench size={22} className="text-slate-100" />
+                </div>
+                <div className="text-left leading-none">
+                  <h3 className="font-bold text-base uppercase tracking-tight leading-none mb-2 text-slate-50">Cartilla de Mantenimiento: {equipoSeleccionado.tipoProxMp}</h3>
+                  <div className="flex gap-3 items-center text-left leading-none">
+                    <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest bg-black/15 px-2 py-0.5 rounded-sm">EQUIPO: {equipoSeleccionado.codigoEquipo}</span>
+                    <div className="h-3 w-px bg-white/10" />
+                    <div className="flex items-center gap-1.5">
+                      <Target size={12} className="text-emerald-400" />
+                      <span className="text-[10px] font-black text-emerald-400 uppercase">hOROMETRO: {equipoSeleccionado.ProxHoroKmMp} Hrs</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 ml-2">
+                      <RefreshCw size={12} className="text-blue-300" />
+                      <span className="text-[10px] font-black text-blue-300 uppercase italic">Freq: {equipoSeleccionado.frecuencia}h</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ✅ BOTÓN DE FILTRO TÉCNICO (Expandir/Ocultar) */}
+              <div className="flex flex-col items-end gap-2">
+                <button onClick={() => setSoloRequeridos(!soloRequeridos)} className={`flex items-center gap-2 px-3 py-1.5 rounded-sm text-[9px] font-black uppercase transition-all border ${soloRequeridos ? 'bg-emerald-600 border-emerald-500 text-white shadow-[0_0_10px_rgba(16,185,129,0.3)]' : 'bg-white/10 border-white/20 text-slate-300 hover:bg-white/20'}`}>
+                  {soloRequeridos ? <><CheckCircle2 size={13} /> ver lista completa</> : <><ListFilter size={13} /> Mostrar solo requeridos</>}
+                </button>
+                <button onClick={() => setShowPlantillaModal(false)} className="hover:bg-white/10 p-1 rounded-full transition-all text-slate-300 hover:text-white"><X size={26} /></button>
+              </div>
+            </div>
+
+            {/* Tabla Técnica SAP S/4HANA */}
+            <div className="flex-grow overflow-auto bg-white p-0 text-left leading-none">
+              <table className="w-full border-collapse text-left text-[11px] leading-none">
+                <thead className="sticky top-0 z-20 border-b border-slate-300 leading-none">
+                  <tr className="bg-[#f2f4f5] text-[#6a6d70] font-black uppercase tracking-wider leading-none">
+                    <th className="px-5 py-3 border-r border-slate-200">Descripción del Material</th>
+                    <th className="px-5 py-3 border-r border-slate-200 text-center w-56">Código / N° Parte</th>
+                    <th className="px-5 py-3 border-r border-slate-200 text-center w-24">Cant</th>
+                    <th className="px-5 py-3 border-r border-slate-200 text-center w-32">Categoría</th>
+                    <th className="px-5 py-3 text-center w-24 bg-[#354a5f] text-white italic">{equipoSeleccionado.tipoProxMp}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-left leading-none">
+                  {insumosPlantilla
+                    .filter(ins => soloRequeridos ? ins.esActivoEnEstePM : true) // ✅ LÓGICA DE FILTRADO
+                    .map((insumo) => (
+                      <tr key={insumo.id} className={`border-b border-slate-100 transition-colors leading-none ${insumo.esActivoEnEstePM ? 'bg-[#e8f5e9] hover:bg-[#c8e6c9]' : 'bg-white hover:bg-[#f7f9fa]'}`}>
+                        <td className="px-5 py-2.5 border-r border-slate-200/50 text-left leading-none font-bold uppercase tracking-tight text-[#32363a]">{insumo.descripcion}</td>
+                        <td className="px-5 py-2.5 border-r border-slate-200/50 text-center font-mono font-bold text-slate-600">{insumo.nro_parte || '---'}</td>
+                        <td className="px-5 py-2.5 border-r border-slate-200/50 text-center font-black text-[#32363a]">{insumo.cantidad_base} <span className="text-[9px] font-normal text-slate-400">{insumo.unidad}</span></td>
+                        <td className="px-5 py-2.5 border-r border-slate-200/50 text-center">
+                          <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-sm border ${insumo.esActivoEnEstePM ? 'bg-white/50 border-emerald-200 text-emerald-700' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>{insumo.tMtaerial || 'FILTROS'}</span>
+                        </td>
+                        <td className="px-5 py-2.5 text-center w-24 leading-none font-black text-sm italic text-emerald-700">{insumo.esActivoEnEstePM ? 'X' : ''}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Footer Sobrio SAP */}
+            <div className="bg-[#f2f4f5] p-4 border-t border-slate-300 flex justify-between items-center text-left leading-none">
+              <div className="flex gap-4 items-center text-left leading-none text-slate-500 italic font-medium">
+                <ShieldCheck size={16} className="text-emerald-600" />
+                <span className="text-[10px] font-black uppercase tracking-wide">Alejandro Aponte - Analista</span>
+              </div>
+              <div className="flex gap-2.5 text-left leading-none">
+                <button onClick={() => window.print()} className="flex items-center gap-2 bg-slate-700 text-white px-5 py-2 rounded-sm text-[10px] font-black uppercase hover:bg-black active:scale-95 leading-none shadow-md"><FileText size={14} /> Exportar Guía</button>
+                <button onClick={() => setShowPlantillaModal(false)} className="bg-[#0070b1] hover:bg-[#005a8e] text-white px-10 py-2 rounded-sm text-[10px] font-black uppercase shadow-lg active:scale-95 leading-none transition-all">Cerrar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ MODAL DE HISTORIAL DE TRABAJOS (ESTILO SAP) CON TIPO TRABAJO */}
+      {showEventosModal && equipoSeleccionado && (
+        <div className="fixed inset-0 z-[600] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-6xl rounded-sm shadow-2xl flex flex-col max-h-[90vh] border border-slate-300">
+            <div className="bg-[#354a5f] p-4 flex justify-between items-center text-white border-b-4 border-[#0070b1]">
+              <div className="flex items-center gap-4">
+                <div className="bg-[#0070b1] p-2 rounded-sm"><History size={24} /></div>
+                <div>
+                  <h3 className="font-black text-lg uppercase leading-none">Log de Eventos y Trabajos</h3>
+                  <p className="text-[10px] opacity-70 font-bold uppercase tracking-widest">{equipoSeleccionado.placaRodaje} | {equipoSeleccionado.descripcionEquipo}</p>
+                </div>
+              </div>
+              <X className="cursor-pointer hover:text-rose-500" size={30} onClick={() => setShowEventosModal(false)} />
+            </div>
+
+            <div className="flex-grow overflow-auto bg-white">
+              <table className="w-full border-collapse text-[11px]">
+                <thead className="sticky top-0 bg-[#f2f4f5] border-b-2 border-slate-200 z-10 font-black text-[#6a6d70] uppercase">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Fecha</th>
+                    <th className="px-4 py-3 text-left">Tipo Trabajo</th>
+                    <th className="px-4 py-3 text-left">Sistema / Subsistema</th>
+                    <th className="px-4 py-3 text-left">Evento / Trabajo</th>
+                    <th className="px-4 py-3 text-center">Horómetro</th>
+                    <th className="px-4 py-3 text-left">Técnico</th>
+                    <th className="px-4 py-3 text-center">Duración</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {eventosEquipo.length > 0 ? eventosEquipo.map((ev) => (
+                    <tr
+                      key={ev.id}
+                      // ✅ PASO FINAL: Agregamos la función para abrir el detalle al hacer clic
+                      onClick={() => abrirDetalleSAP(ev)}
+                      // ✅ Agregamos cursor-pointer para que aparezca la "manito" al pasar el mouse
+                      className="hover:bg-slate-100 cursor-pointer transition-colors border-b border-slate-100 group"
+                    >
+                      <td className="px-4 py-3 font-bold text-slate-600">
+                        {new Date(ev.fecha_evento).toLocaleDateString('es-PE')}
+                      </td>
+
+                      {/* COLUMNA TIPO TRABAJO DINÁMICA */}
+                      <td className="px-4 py-3 font-bold">
+                        <span className={`px-2 py-0.5 rounded-sm text-[9px] uppercase border ${ev.tipoTrabajo === 'Preventivo' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                          ev.tipoTrabajo === 'Correctivo' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                            'bg-slate-50 text-slate-600 border-slate-200'
+                          }`}>
+                          {ev.tipoTrabajo || '---'}
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <div className="font-black text-[#0070b1] uppercase">{ev.sistema}</div>
+                        <div className="text-[9px] text-slate-400 font-bold uppercase">{ev.subsistema}</div>
+                      </td>
+                      <td className="px-4 py-3 font-bold text-slate-700 uppercase leading-tight">{ev.evento}</td>
+                      <td className="px-4 py-3 text-center font-mono font-black bg-slate-50">{ev.horometro} H</td>
+                      <td className="px-4 py-3 text-slate-500 uppercase font-medium">{ev.tecnico}</td>
+                      <td className="px-4 py-3 text-center font-bold text-emerald-600 bg-emerald-50/30">{ev.duracion} hrs</td>
+                    </tr>
+                  )) : (
+
+                    <tr><td colSpan={7} className="py-20 text-center opacity-30 font-black uppercase text-sm">Sin historial de eventos registrados</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="bg-[#f2f4f5] p-4 border-t flex justify-end">
+              <button onClick={() => setShowEventosModal(false)} className="bg-[#0070b1] text-white px-10 py-2 rounded-sm text-[10px] font-black uppercase hover:bg-[#005a8e]">Cerrar Historial</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ MODAL DETALLE SAP S/4HANA */}
+      {verEventoDetalle && (
+        <ModalDetalle
+          verEvento={verEventoDetalle}
+          setVerEvento={setVerEventoDetalle}
+          repuestosCargados={repuestosDelEvento}
+          darAltaEquipo={() => { }}
+          actualizandoEstatus={false}
+          prepararEdicion={() => { }}
+          eliminarRegistro={() => { }}
+          router={router} //
+        />
+      )}
+
     </main>
   )
 }
@@ -906,4 +1232,185 @@ function SapKpiTile({ label, value, color, active, onClick }: any) {
 
 function ShortcutRow({ keys, label }: { keys: string, label: string }) {
   return (<div className="flex justify-between items-center text-left leading-none text-[10px] font-bold text-slate-600 text-left leading-none"><span>{label}</span><span className="bg-[#f2f4f5] px-2 py-1 rounded-sm font-mono border border-[#d3d7d9] leading-none text-left leading-none">{keys}</span></div>)
+}
+
+// ✅ VISUALIZACIÓN FINAL ESTILO SAP S/4HANA (Pégalo al final del archivo)
+const ModalDetalle = ({
+  verEvento,
+  setVerEvento,
+  repuestosCargados,
+  router //
+
+}: any) => {
+  if (!verEvento) return null;
+
+  return (
+    <div className="fixed inset-0 z-[700] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-[#f7f9fa] w-full max-w-6xl rounded-sm shadow-2xl overflow-hidden border border-[#d3d7d9] text-left leading-none font-sans antialiased">
+
+        {/* Header Dinámico SAP */}
+        <div className="bg-white border-b border-[#d3d7d9] p-6 flex justify-between items-start">
+          <div className="flex items-center gap-5">
+            <div className="bg-[#eff4f9] w-16 h-16 rounded-sm border border-[#b0b3b5] flex items-center justify-center text-[#0070b1]">
+              <Truck size={36} />
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3">
+                  <h2 className="text-2xl font-light text-[#32363a] uppercase tracking-tight">{verEvento.placa}</h2>
+
+                  {/* ✅ BOTÓN DE REDIRECCIÓN PEQUEÑO */}
+                  <button
+                    onClick={() => router.push('/eventos')}
+                    className="flex items-center gap-1 px-2 py-1 bg-[#f2f4f5] hover:bg-[#0070b1] hover:text-white border border-[#d3d7d9] rounded-sm transition-all shadow-sm"
+                  >
+                    <LayoutGrid size={10} />
+                    <span className="text-[9px] font-black uppercase tracking-tighter">Ir a Matriz</span>
+                  </button>
+
+                  <span className={`px-2 py-0.5 rounded-sm text-[10px] font-bold border uppercase ${verEvento.tipoTrabajo === 'Preventivo' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                    verEvento.tipoTrabajo === 'Correctivo' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                      'bg-[#e7f0f7] text-[#0070b1] border-[#b0ccf0]'
+                    }`}>
+                    {verEvento.tipoTrabajo || 'INTERVENCIÓN'}
+                  </span>
+                </div>
+                <span className={`px-2 py-0.5 rounded-sm text-[10px] font-bold border uppercase ${verEvento.tipoTrabajo === 'Preventivo' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                  verEvento.tipoTrabajo === 'Correctivo' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                    'bg-[#e7f0f7] text-[#0070b1] border-[#b0ccf0]'
+                  }`}>
+                  {verEvento.tipoTrabajo || 'INTERVENCIÓN'}
+                </span>
+              </div>
+              <div className="flex items-center gap-4 text-[#6a6d70] text-[11px] font-medium uppercase">
+                <span className="flex items-center gap-1.5"><Calendar size={12} /> {new Date(verEvento.fecha_evento).toLocaleDateString()}</span>
+                <span className="w-px h-3 bg-[#d3d7d9]"></span>
+                <span className="flex items-center gap-1.5"><Clock size={12} /> ID LOG: {verEvento.id?.slice(0, 8)}</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button className="flex items-center gap-2 px-4 py-2 bg-[#0854a0] hover:bg-[#0a6ed1] text-white rounded-sm font-bold text-xs uppercase transition-all shadow-sm">
+              <CheckCircle2 size={14} /> Finalizar Intervención
+            </button>
+            <div className="h-8 w-px bg-[#d3d7d9] mx-1" />
+            <X className="cursor-pointer text-slate-400 hover:text-rose-500" size={32} onClick={() => setVerEvento(null)} />
+          </div>
+        </div>
+
+        {/* Content Facets (Indicadores rápidos) */}
+        <div className="grid grid-cols-4 bg-white border-b border-[#d3d7d9]">
+          <FacetItem label="Lectura Horómetro" value={`${verEvento.horometro} H`} icon={<Activity size={14} />} color="text-[#0070b1]" />
+          <FacetItem label="Duración Real" value={`${verEvento.duracion || 0} H`} icon={<Clock size={14} />} />
+          <FacetItem label="Técnico a Cargo" value={verEvento.tecnico || 'N/A'} icon={<User size={14} />} />
+          <FacetItem label="Emplazamiento" value={verEvento.ubic || 'PATIO'} icon={<MapPin size={14} />} />
+        </div>
+
+        <div className="p-8 grid grid-cols-1 lg:grid-cols-3 gap-10 overflow-y-auto max-h-[60vh]">
+          {/* Estructura Técnica */}
+          <div className="space-y-6">
+            <section>
+              <h3 className="text-[12px] font-bold text-[#6a6d70] uppercase mb-4 border-b border-[#d3d7d9] pb-2">Estructura Técnica</h3>
+              <div className="space-y-5">
+                <SapDataField label="Sistema / Conjunto" value={verEvento.sistema} icon={<Settings size={16} />} />
+                <SapDataField label="Subsistema / Nodo" value={verEvento.subsistema} icon={<Wrench size={16} />} />
+                <div className="pt-4">
+                  <label className="text-[10px] font-bold text-[#6a6d70] uppercase block mb-2">Ventana de Tiempo</label>
+                  <div className="flex gap-3">
+                    <TimeBox label="Inicio" time={verEvento.H_inicial} />
+                    <TimeBox label="Término" time={verEvento.H_final} />
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          {/* Listado de Materiales (Tabla SAP extendida) */}
+          <div className="lg:col-span-2 space-y-6">
+            <section>
+              <h3 className="text-[12px] font-bold text-[#6a6d70] uppercase mb-4 border-b border-[#d3d7d9] pb-2 flex justify-between items-center">
+                <span>Lista de Materiales y Repuestos</span>
+                <span className="text-[10px] bg-[#eff4f9] text-[#0070b1] px-2 py-0.5 rounded-full border border-[#b0ccf0]">Items: {repuestosCargados?.length || 0}</span>
+              </h3>
+              <div className="bg-white border border-[#d3d7d9] rounded-sm overflow-hidden">
+                <table className="w-full text-[11px] text-left border-collapse">
+                  <thead className="bg-[#f2f4f5] text-[#6a6d70] font-bold uppercase text-[10px]">
+                    <tr className="border-b border-[#d3d7d9]">
+                      <th className="p-3">Descripción Material</th>
+                      <th className="p-3">N° Parte</th>
+                      <th className="p-3">Almacén</th>
+                      <th className="p-3 text-right">Cant.</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#ebeef0]">
+                    {repuestosCargados && repuestosCargados.length > 0 ? (
+                      repuestosCargados.map((r: any, i: number) => (
+                        <tr key={i} className="hover:bg-[#f7f9fa]">
+                          <td className="p-3 font-bold text-[#32363a] uppercase tracking-tight">{r.descripcion_repuesto}</td>
+                          <td className="p-3 font-mono text-slate-500">{r.bdRepuestoId?.slice(0, 8) || 'S/N'}</td>
+                          <td className="p-3 text-slate-500 uppercase">S/N</td>
+                          <td className="p-3 text-right font-black text-[#0070b1] bg-[#f0f9ff]">x{r.cantidad}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr><td colSpan={4} className="p-10 text-center text-slate-300 italic uppercase text-[10px] font-black"><Package size={24} className="mx-auto mb-2 opacity-20" />Sin movimientos de mercancía</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section>
+              <h3 className="text-[12px] font-bold text-[#6a6d70] uppercase mb-4 border-b border-[#d3d7d9] pb-2">Diagnóstico Técnico del Evento</h3>
+              <div className="bg-[#f2f4f5] p-5 border-l-4 border-[#0070b1] relative min-h-[80px]">
+                <p className="text-xs text-[#32363a] leading-relaxed italic font-medium whitespace-pre-wrap">"{verEvento.evento}"</p>
+                <PenTool className="absolute bottom-2 right-2 text-slate-300 opacity-20" size={24} />
+              </div>
+            </section>
+          </div>
+        </div>
+
+        {/* Footer SAP */}
+        <div className="bg-[#354a5f] p-2.5 px-6 flex justify-between items-center text-white/60 text-[9px] font-mono tracking-widest leading-none">
+          <span>STATUS: INTERVENCIÓN CERRADA</span>
+          <span>SISTEMA DE GESTIÓN DE ACTIVOS 2026</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- Sub-componentes SAP ---
+
+function FacetItem({ label, value, icon, color = "text-[#32363a]" }: any) {
+  return (
+    <div className="p-4 border-r border-[#d3d7d9] last:border-0 hover:bg-[#f7f9fa] transition-colors">
+      <p className="text-[10px] font-bold text-[#6a6d70] uppercase mb-1">{label}</p>
+      <div className={`flex items-center gap-2 font-bold ${color}`}>
+        <span className="opacity-40">{icon}</span>
+        <span className="text-sm truncate uppercase">{value}</span>
+      </div>
+    </div>
+  )
+}
+
+function SapDataField({ label, value, icon }: any) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="text-slate-300 mt-0.5">{icon}</div>
+      <div>
+        <label className="text-[10px] font-bold text-[#6a6d70] uppercase block mb-1">{label}</label>
+        <p className="text-xs font-black text-[#32363a] uppercase leading-tight">{value || '---'}</p>
+      </div>
+    </div>
+  )
+}
+
+function TimeBox({ label, time }: any) {
+  return (
+    <div className="flex-1 bg-white border border-[#d3d7d9] p-2 rounded-sm text-center">
+      <span className="text-[9px] text-slate-400 block uppercase font-bold mb-1">{label}</span>
+      <span className="text-xs font-mono font-bold text-slate-700">{time || '--:--'}</span>
+    </div>
+  )
 }

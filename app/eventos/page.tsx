@@ -249,10 +249,13 @@ function HistorialFormContent() {
         fetchRegistros();
     }
 
+    // ✅ BUSCADOR MEJORADO: Ahora incluye la búsqueda por ID LOG
     const registrosFiltrados = registros.filter(r =>
         r.placa.toLowerCase().includes(busqueda.toLowerCase()) ||
         r.sistema.toLowerCase().includes(busqueda.toLowerCase()) ||
-        r.tecnico?.toLowerCase().includes(busqueda.toLowerCase())
+        r.tecnico?.toLowerCase().includes(busqueda.toLowerCase()) ||
+        // Añadimos la búsqueda por ID (Documento)
+        r.id.toLowerCase().includes(busqueda.toLowerCase())
     );
 
     const agregarRepuestoALista = () => {
@@ -272,7 +275,7 @@ function HistorialFormContent() {
                     </button>
                     <div>
                         <h1 className="text-sm font-bold uppercase tracking-wider">Historial de Intervenciones</h1>
-                        <span className="text-[10px] opacity-60 font-mono leading-none">SAP S/4HANA Asset Management</span>
+                        <span className="text-[10px] opacity-60 font-mono leading-none">SGM - Alejandro Aponte</span>
                     </div>
                 </div>
 
