@@ -190,7 +190,7 @@ export default function PlanificadorMantenimiento() {
         setActualizandoPlaca(null);
     }
 
-    if (loading) return <div className="min-h-screen flex items-center justify-center font-black text-[#0070b1] animate-pulse uppercase italic">Cargando S/4HANA Logistics...</div>
+    if (loading) return <div className="min-h-screen flex items-center justify-center font-black text-[#0070b1] animate-pulse uppercase italic">Cargando Planificador...</div>
 
     return (
         <main className="min-h-screen bg-[#f4f6f8] font-sans text-[#32363a] antialiased pb-12">
@@ -200,7 +200,7 @@ export default function PlanificadorMantenimiento() {
                     <div className="flex items-center gap-6">
                         <div className="flex items-center gap-2 pr-6 border-r border-white/10">
                             <Layers className="text-blue-300" size={20} />
-                            <h1 className="text-sm font-black uppercase tracking-tighter">Planner Logistics SGM</h1>
+                            <h1 className="text-sm font-black uppercase tracking-tighter">Planificador SGM</h1>
                         </div>
                         <div className="relative">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />

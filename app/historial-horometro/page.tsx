@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import * as XLSX from 'xlsx'
 import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 import {
   ArrowLeft, Search, Gauge, Truck, X, Save, Loader2, History,
   ChevronRight, ArrowUpCircle, Clock, Wrench, ShieldCheck, ShieldAlert,
@@ -280,8 +281,83 @@ export default function EstadoGeneralPage() {
       if ((e.key === 'Enter' || e.key === 'Escape') && showVisualLlantas) setShowVisualLlantas(false);
       if (e.key === 'Escape' && showVencidosModal) setShowVencidosModal(false);
       if (e.ctrlKey && e.altKey && e.key === '0') { e.preventDefault(); router.push('/eventos'); }
+      if (e.altKey && e.key === 'p') { e.preventDefault(); router.push('/planificador'); }
+      if (e.altKey && e.key === 'l') { e.preventDefault(); router.push('/listpreventivo'); }
+
     };
     window.addEventListener('keydown', handleKeyDown);
+
+    // ✅ FUNCIÓN PARA GENERAR EL PDF DE LA CARTILLA INDIVIDUAL
+    const descargarCartillaIndividualPDF = () => {
+      if (!equipoSeleccionado) return;
+
+      const doc = new jsPDF();
+      const fecha = new Date().toLocaleDateString();
+
+      // 1. Encabezado SGM / SAP Style
+      doc.setFillColor(53, 74, 95);
+      doc.rect(0, 0, 210, 40, 'F');
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(20);
+      doc.text(`CARTILLA DE MANTENIMIENTO: ${equipoSeleccionado.tipoProxMp}`, 15, 20);
+
+      doc.setFontSize(10);
+      doc.text(`EQUIPO: ${equipoSeleccionado.codigoEquipo} | PLACA: ${equipoSeleccionado.placaRodaje}`, 15, 28);
+      doc.text(`HOROMETRO META: ${equipoSeleccionado.ProxHoroKmMp} H | FECHA: ${fecha}`, 15, 34);
+
+      // 2. Información del Equipo
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(12);
+      doc.text("Datos de la Unidad", 15, 52);
+
+      autoTable(doc, {
+        startY: 55,
+        head: [['Descripción', 'Marca', 'Modelo', 'Frecuencia', 'Ubicación']],
+        body: [[
+          equipoSeleccionado.descripcionEquipo,
+          equipoSeleccionado.marca,
+          equipoSeleccionado.modelo,
+          `${equipoSeleccionado.frecuencia} H`,
+          equipoSeleccionado.ubic
+        ]],
+        theme: 'grid',
+        headStyles: { fillColor: [0, 112, 177] },
+      });
+
+      // 3. Listado de Insumos (Solo los requeridos marcados con X)
+      doc.text(`Detalle de Repuestos e Insumos (${equipoSeleccionado.tipoProxMp})`, 15, (doc as any).lastAutoTable.finalY + 15);
+
+      const insumosFiltrados = insumosPlantilla.filter(ins => ins.esActivoEnEstePM);
+
+      autoTable(doc, {
+        startY: (doc as any).lastAutoTable.finalY + 20,
+        head: [['Descripción del Material', 'N° Parte', 'Cant', 'Und', 'Categoría']],
+        body: insumosFiltrados.map(ins => [
+          ins.descripcion,
+          ins.nro_parte || '---',
+          ins.cantidad_base,
+          ins.unidad,
+          ins.tMtaerial || 'FILTROS'
+        ]),
+        headStyles: { fillColor: [53, 74, 95] },
+        styles: { fontSize: 9 },
+      });
+
+      // 4. Pie de página con firmas
+      const finalY = (doc as any).lastAutoTable.finalY;
+      if (finalY < 250) {
+        doc.setFontSize(9);
+        doc.text("__________________________", 15, 275);
+        doc.text("Firma Responsable Taller", 15, 280);
+        doc.text("__________________________", 140, 275);
+        doc.text("Recibido Almacén", 140, 280);
+      }
+
+      doc.save(`Cartilla_${equipoSeleccionado.codigoEquipo}_${equipoSeleccionado.tipoProxMp}.pdf`);
+    };
+
+
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [router, fetchEstadoActual, showVisualLlantas, showVencidosModal, equiposFiltradosActuales]);
 
@@ -447,6 +523,72 @@ export default function EstadoGeneralPage() {
     if (data) setEventosEquipo(data);
     setShowEventosModal(true);
     setLoading(false);
+  };
+
+  // ✅ FUNCIÓN GENERADORA DEL PDF PARA CARTILLA INDIVIDUAL
+  const descargarGuiaInsumosPDF = () => {
+    if (!equipoSeleccionado) return;
+
+    const doc = new jsPDF();
+    const fecha = new Date().toLocaleDateString();
+
+    // 1. Cabecera Estilo SAP S/4HANA
+    doc.setFillColor(53, 74, 95);
+    doc.rect(0, 0, 210, 40, 'F');
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(20);
+    doc.text(`Cartilla de mantenimiento: ${equipoSeleccionado.tipoProxMp}`, 15, 22);
+
+    doc.setFontSize(10);
+    doc.text(`EQUIPO: ${equipoSeleccionado.codigoEquipo} | PLACA: ${equipoSeleccionado.placaRodaje}`, 15, 30);
+    doc.text(`SOLICITADO POR: Alejandro Aponte | FECHA: ${fecha}`, 15, 35);
+
+    // 2. Tabla de Datos de la Unidad
+    doc.setTextColor(0, 0, 0);
+    autoTable(doc, {
+      startY: 55,
+      head: [['Descripción', 'Marca', 'Modelo', 'Horómetro Actual', 'Ubicación']],
+      body: [[
+        equipoSeleccionado.descripcionEquipo,
+        equipoSeleccionado.marca,
+        equipoSeleccionado.modelo,
+        `${equipoSeleccionado.horometroMayor} H`,
+        equipoSeleccionado.ubic
+      ]],
+      theme: 'grid',
+      headStyles: { fillColor: [0, 112, 177] },
+      styles: { fontSize: 8 }
+    });
+
+    // 3. Listado de Insumos (Solo los marcados como REQUERIDOS con X)
+    const finalYPrev = (doc as any).lastAutoTable.finalY;
+    doc.setFontSize(12);
+    doc.text(`Detalle de Materiales Requeridos (${equipoSeleccionado.tipoProxMp})`, 15, finalYPrev + 15);
+
+    const soloMarcados = insumosPlantilla.filter(ins => ins.esActivoEnEstePM);
+
+    autoTable(doc, {
+      startY: finalYPrev + 20,
+      head: [['Descripción del Material', 'N° Parte / Código', 'Cant', 'Und', 'Tipo']],
+      body: soloMarcados.map(ins => [
+        ins.descripcion,
+        ins.nro_parte || 'S/N',
+        ins.cantidad_base,
+        ins.unidad,
+        ins.tMtaerial || 'FILTROS'
+      ]),
+      headStyles: { fillColor: [53, 74, 95] },
+      styles: { fontSize: 8 },
+    });
+
+    // 4. Espacio para Firmas
+    const finalY = (doc as any).lastAutoTable.finalY;
+    if (finalY < 250) {
+
+    }
+
+    doc.save(`GUIA_INSUMOS_${equipoSeleccionado.codigoEquipo}_${equipoSeleccionado.tipoProxMp}.pdf`);
   };
 
   return (
@@ -1015,7 +1157,12 @@ export default function EstadoGeneralPage() {
                 <span className="text-[10px] font-black uppercase tracking-wide">Alejandro Aponte - Analista</span>
               </div>
               <div className="flex gap-2.5 text-left leading-none">
-                <button onClick={() => window.print()} className="flex items-center gap-2 bg-slate-700 text-white px-5 py-2 rounded-sm text-[10px] font-black uppercase hover:bg-black active:scale-95 leading-none shadow-md"><FileText size={14} /> Exportar Guía</button>
+                <button
+                  onClick={descargarGuiaInsumosPDF}
+                  className="flex items-center gap-2 bg-slate-700 text-white px-5 py-2 rounded-sm text-[10px] font-black uppercase hover:bg-black active:scale-95 leading-none shadow-md"
+                >
+                  <FileText size={14} /> Exportar cartilla
+                </button>
                 <button onClick={() => setShowPlantillaModal(false)} className="bg-[#0070b1] hover:bg-[#005a8e] text-white px-10 py-2 rounded-sm text-[10px] font-black uppercase shadow-lg active:scale-95 leading-none transition-all">Cerrar</button>
               </div>
             </div>
