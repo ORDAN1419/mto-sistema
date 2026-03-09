@@ -203,65 +203,42 @@ export default function CalendarioMttoPage() {
 
 
     const dataFiltrada = useMemo(() => {
-
-        const term = busqueda.toLowerCase();
+        // 1. Limpiamos el término y lo dividimos por espacios
+        const palabrasBusqueda = busqueda.toLowerCase().split(' ').filter(p => p !== '');
 
         return programacionBalanceada.filter(p => {
-
             // ✅ FILTRO DE SEGURIDAD: Solo mostrar operativos o inoperativos
-
             const noEstaInmovilizada = p.status !== 'DESMOVILIZADO' && p.status !== 'INMOVILIZADAS';
 
+            // 2. Lógica de "Cada palabra debe encontrarse en algún lugar"
+            const cumpleBusqueda = palabrasBusqueda.every(palabra => {
+                return (
+                    (p.placaRodaje || "").toLowerCase().includes(palabra) ||
+                    (p.codigoEquipo || "").toLowerCase().includes(palabra) ||
+                    (p.marca || "").toLowerCase().includes(palabra) ||
+                    (p.modelo || "").toLowerCase().includes(palabra) ||
+                    (p.descripcionEquipo || "").toLowerCase().includes(palabra) ||
+                    (p.estado_alerta || "").toLowerCase().includes(palabra) ||
+                    (p.ubic || "").toLowerCase().includes(palabra)
+                );
+            });
 
-
-            const cumpleBusqueda =
-
-                (p.placaRodaje || "").toLowerCase().includes(term) ||
-
-                (p.codigoEquipo || "").toLowerCase().includes(term) ||
-
-                (p.marca || "").toLowerCase().includes(term) ||
-
-                (p.modelo || "").toLowerCase().includes(term) ||
-
-                (p.descripcionEquipo || "").toLowerCase().includes(term) ||
-
-                (p.estado_alerta || "").toLowerCase().includes(term);
-
-
-
+            // 3. Filtro de Rango de Fechas (se mantiene igual)
             let cumpleRango = true;
-
             if (fechaInicio && fechaFin) {
-
                 try {
-
                     const pFecha = parseISO(p.fecha_estimada_mtto);
-
                     const dInicio = parseISO(fechaInicio);
-
                     const dFin = parseISO(fechaFin);
-
                     if (isValid(dInicio) && isValid(dFin)) {
-
                         cumpleRango = isWithinInterval(pFecha, { start: dInicio, end: dFin });
-
                     }
-
                 } catch (e) { cumpleRango = false; }
-
             }
 
-
-
-            // ✅ Retornamos solo si cumple con el filtro de status y la búsqueda
-
             return noEstaInmovilizada && cumpleBusqueda && cumpleRango;
-
         });
-
     }, [programacionBalanceada, busqueda, fechaInicio, fechaFin]);
-
 
 
     // ✅ EXPORTACIÓN PDF AGRUPADA + COLORES DE ESTADO Y CONTEO POR GRUPO
