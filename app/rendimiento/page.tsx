@@ -401,7 +401,7 @@ function RendimientoContent() {
                   <div className="flex flex-col gap-2 text-left leading-none">
                     <label className="text-[10px] font-bold text-[#6a6d70] uppercase leading-none">Turno Operativo</label>
                     <select value={formConductor.turno} onChange={(e) => setFormConductor({ ...formConductor, turno: e.target.value })} className="border border-[#b0b3b5] p-2 text-sm rounded-sm outline-none focus:border-[#0070b1] bg-slate-50 cursor-pointer">
-                      <option value="T.D">SOLAR (T.D)</option><option value="T.N">LUNAR (T.N)</option>
+                      <option value="T.D">DIA (T.D)</option><option value="T.N">NOCHE (T.N)</option>
                     </select>
                   </div>
                 </div>

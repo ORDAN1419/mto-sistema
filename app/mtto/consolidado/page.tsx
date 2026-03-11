@@ -696,13 +696,8 @@ export default function CalendarioMttoPage() {
                 </div>
 
             </main>
-
-
-
             <style jsx global>{`
-
                 .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-
                 .custom-scrollbar::-webkit-scrollbar-thumb { background: #ced4da; border-radius: 10px; }
 
             `}</style>

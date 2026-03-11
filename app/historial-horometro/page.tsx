@@ -731,15 +731,18 @@ export default function EstadoGeneralPage() {
             </div>
           </div>
         </div>
-
+        {/*modal ver equipo*/}
         {equipoSeleccionado && (
           <div className="w-1/3 bg-white border border-[#d3d7d9] shadow-xl rounded-sm flex flex-col animate-in slide-in-from-right duration-300 sticky top-16 h-fit max-h-[calc(100vh-80px)] overflow-y-auto">
             <div className="p-4 border-b border-[#d3d7d9] bg-[#f7f9fa] flex justify-between items-center text-left leading-none">
               <div className="leading-none text-left flex flex-col gap-1">
-                <h2 className="text-xl font-light text-[#0070b1] uppercase tracking-tight leading-none mb-1 font-sans antialiased">{equipoSeleccionado.placaRodaje}</h2>
+                <h2 className="text-xl font-light text-[#0070b1] uppercase tracking-tight leading-none mb-1 font-sans antialiased">{equipoSeleccionado.codigoEquipo}</h2>
                 <div className="flex items-center gap-3">
-                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider bg-slate-100 px-1.5 py-0.5 rounded-sm">{equipoSeleccionado.codigoEquipo}</span>
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider bg-slate-100 px-1.5 py-0.5 rounded-sm">{equipoSeleccionado.placaRodaje}</span>
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider bg-slate-100 px-1.5 py-0.5 rounded-sm">{equipoSeleccionado.marca}</span>
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider bg-slate-100 px-1.5 py-0.5 rounded-sm">{equipoSeleccionado.modelo}</span>
                   <div className="w-px h-3 bg-slate-300" />
+
                   {/* ✅ ETIQUETA DE STATUS CON NUEVOS COLORES */}
                   <div
                     onClick={() => toggleEstado(equipoSeleccionado)}
