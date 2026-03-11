@@ -244,7 +244,7 @@ function RendimientoContent() {
         <div className="flex items-center gap-4 text-white">
           <ArrowLeft size={18} onClick={() => router.back()} className="cursor-pointer hover:opacity-70" />
           <div className="h-6 w-px bg-white/20" />
-          <span className="font-bold text-xs tracking-wider uppercase italic leading-none">Rendimiento Operativo | SAP S/4HANA</span>
+          <span className="font-bold text-xs tracking-wider uppercase italic leading-none">Rendimiento Operativo | AVNETWK1419</span>
         </div>
         <div className="flex items-center gap-4">
           <HelpCircle size={20} className="text-white opacity-80 cursor-pointer hover:opacity-100" onClick={() => setIsHelpModalOpen(true)} />
@@ -355,7 +355,7 @@ function RendimientoContent() {
           </div>
           <div className="bg-[#f2f4f5] p-2 px-4 border-t border-[#d3d7d9] flex justify-between text-[10px] font-bold text-[#6a6d70]">
             <span>ENTRADAS ENCONTRADAS: {data.length}</span>
-            <span className="uppercase tracking-widest italic text-right">SAP S/4HANA Public Cloud System</span>
+            <span className="uppercase tracking-widest italic text-right">SGM AVNETWK1419 -SISTEMA DE GESTION DEL MANTENIMIENTO</span>
           </div>
         </div>
 
